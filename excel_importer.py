@@ -39,26 +39,39 @@ class ExcelImporter:
             # Read all sheets from the Excel file
             excel_file = pd.ExcelFile(file_path)
 
-            # Import clients if sheet exists
-            if 'Clients' in excel_file.sheet_names:
-                client_results = self._import_clients(excel_file)
-                results['clients_added'] = client_results['added']
-                results['clients_updated'] = client_results['updated']
-                results['errors'].extend(client_results['errors'])
-                results['warnings'].extend(client_results['warnings'])
+            # Check if this is the standard format or weekly schedule format
+            has_standard_sheets = ('Clients' in excel_file.sheet_names or
+                                 'Materials' in excel_file.sheet_names or
+                                 'Visits' in excel_file.sheet_names)
 
-            # Import materials if sheet exists
-            if 'Materials' in excel_file.sheet_names:
-                material_results = self._import_materials(excel_file)
-                results['materials_added'] = material_results['added']
-                results['errors'].extend(material_results['errors'])
+            if has_standard_sheets:
+                # Import clients if sheet exists
+                if 'Clients' in excel_file.sheet_names:
+                    client_results = self._import_clients(excel_file)
+                    results['clients_added'] = client_results['added']
+                    results['clients_updated'] = client_results['updated']
+                    results['errors'].extend(client_results['errors'])
+                    results['warnings'].extend(client_results['warnings'])
 
-            # Import visits if sheet exists
-            if 'Visits' in excel_file.sheet_names:
-                visit_results = self._import_visits(excel_file)
-                results['visits_added'] = visit_results['added']
-                results['errors'].extend(visit_results['errors'])
-                results['warnings'].extend(visit_results['warnings'])
+                # Import materials if sheet exists
+                if 'Materials' in excel_file.sheet_names:
+                    material_results = self._import_materials(excel_file)
+                    results['materials_added'] = material_results['added']
+                    results['errors'].extend(material_results['errors'])
+
+                # Import visits if sheet exists
+                if 'Visits' in excel_file.sheet_names:
+                    visit_results = self._import_visits(excel_file)
+                    results['visits_added'] = visit_results['added']
+                    results['errors'].extend(visit_results['errors'])
+                    results['warnings'].extend(visit_results['warnings'])
+            else:
+                # Try to import as weekly schedule format
+                schedule_results = self._import_weekly_schedule(file_path)
+                results['clients_added'] = schedule_results['clients_added']
+                results['visits_added'] = schedule_results['visits_added']
+                results['errors'].extend(schedule_results['errors'])
+                results['warnings'].extend(schedule_results['warnings'])
 
         except Exception as e:
             results['success'] = False
@@ -286,6 +299,193 @@ class ExcelImporter:
             results['errors'].append(f"Failed to import visits: {str(e)}")
 
         return results
+
+    def _import_weekly_schedule(self, file_path: str) -> Dict:
+        """
+        Import from weekly schedule format (client names in first column,
+        repeated Fecha/Inicio/Fin/Total columns for each week).
+
+        Args:
+            file_path: Path to the Excel file
+
+        Returns:
+            Dictionary with import results
+        """
+        results = {
+            'clients_added': 0,
+            'visits_added': 0,
+            'errors': [],
+            'warnings': []
+        }
+
+        try:
+            # Read the first sheet (usually the only sheet in this format)
+            df = pd.read_excel(file_path, header=None)
+
+            # Skip the first row (headers like "Semana 1", "Semana 2", etc.)
+            # and use the second row for column structure
+            header_row1 = df.iloc[0] if len(df) > 0 else []
+            header_row2 = df.iloc[1] if len(df) > 1 else []
+
+            # Start processing from row 2 (index 2, since 0 and 1 are headers)
+            data_start = 2
+
+            # Get all existing clients
+            existing_clients = self.db.get_all_clients(active_only=False)
+            client_map = {c['name'].lower(): c['id'] for c in existing_clients}
+
+            # Process each row (each row is a client)
+            for row_idx in range(data_start, len(df)):
+                try:
+                    row = df.iloc[row_idx]
+
+                    # First column is the client name
+                    if pd.isna(row.iloc[0]):
+                        continue  # Skip empty rows
+
+                    client_name = str(row.iloc[0]).strip()
+
+                    # Check if client exists, if not create with $0 monthly charge
+                    client_id = client_map.get(client_name.lower())
+                    if not client_id:
+                        client_id = self.db.add_client(
+                            name=client_name,
+                            monthly_charge=0.0,  # Default, user can update later
+                            notes="Imported from Excel schedule"
+                        )
+                        client_map[client_name.lower()] = client_id
+                        results['clients_added'] += 1
+
+                    # Process each week's data (columns 1-4, 5-8, 9-12, 13-16, etc.)
+                    # Each week has: Fecha (Date), Inicio (Start), Fin (End), Total
+                    col_idx = 1
+                    week_num = 1
+
+                    while col_idx + 3 < len(row):
+                        try:
+                            fecha = row.iloc[col_idx]      # Date
+                            inicio = row.iloc[col_idx + 1]  # Start time
+                            fin = row.iloc[col_idx + 2]     # End time
+                            # total = row.iloc[col_idx + 3]  # Total (we calculate this ourselves)
+
+                            # Skip if date is empty
+                            if pd.isna(fecha):
+                                col_idx += 4
+                                week_num += 1
+                                continue
+
+                            # Parse date
+                            try:
+                                if isinstance(fecha, pd.Timestamp):
+                                    date_str = fecha.strftime('%Y-%m-%d')
+                                else:
+                                    # Try to parse date (could be "1/2/2025" format)
+                                    date_obj = pd.to_datetime(fecha)
+                                    date_str = date_obj.strftime('%Y-%m-%d')
+                            except:
+                                results['warnings'].append(
+                                    f"Row {row_idx+1} ({client_name}), Week {week_num}: Invalid date '{fecha}'"
+                                )
+                                col_idx += 4
+                                week_num += 1
+                                continue
+
+                            # Parse start and end times (could be "12:10 PM" format)
+                            try:
+                                start_time_str = self._parse_time(inicio)
+                                end_time_str = self._parse_time(fin)
+                            except Exception as e:
+                                results['warnings'].append(
+                                    f"Row {row_idx+1} ({client_name}), Week {week_num}: Invalid time - {str(e)}"
+                                )
+                                col_idx += 4
+                                week_num += 1
+                                continue
+
+                            # Calculate duration
+                            start = datetime.strptime(start_time_str, '%H:%M')
+                            end = datetime.strptime(end_time_str, '%H:%M')
+                            duration_minutes = (end - start).total_seconds() / 60
+
+                            if duration_minutes <= 0:
+                                results['warnings'].append(
+                                    f"Row {row_idx+1} ({client_name}), Week {week_num}: End time before start time"
+                                )
+                                col_idx += 4
+                                week_num += 1
+                                continue
+
+                            # Add visit
+                            self.db.add_visit(
+                                client_id=client_id,
+                                visit_date=date_str,
+                                start_time=start_time_str,
+                                end_time=end_time_str,
+                                duration_minutes=duration_minutes,
+                                notes=f"Imported from Excel (Week {week_num})"
+                            )
+                            results['visits_added'] += 1
+
+                        except Exception as e:
+                            results['warnings'].append(
+                                f"Row {row_idx+1} ({client_name}), Week {week_num}: {str(e)}"
+                            )
+
+                        col_idx += 4
+                        week_num += 1
+
+                except Exception as e:
+                    results['errors'].append(f"Row {row_idx+1}: {str(e)}")
+
+        except Exception as e:
+            results['errors'].append(f"Failed to import weekly schedule: {str(e)}")
+
+        return results
+
+    def _parse_time(self, time_value) -> str:
+        """
+        Parse time from various formats and return HH:MM 24-hour format.
+        Handles: "12:10 PM", "9:30 AM", pd.Timestamp, etc.
+
+        Args:
+            time_value: Time value from Excel
+
+        Returns:
+            Time string in HH:MM 24-hour format
+        """
+        if pd.isna(time_value):
+            raise ValueError("Time is empty")
+
+        # If it's already a pandas Timestamp
+        if isinstance(time_value, pd.Timestamp):
+            return time_value.strftime('%H:%M')
+
+        # Convert to string and strip whitespace
+        time_str = str(time_value).strip()
+
+        # Try to parse as 12-hour format with AM/PM
+        try:
+            # Handle formats like "12:10 PM", "9:30 AM"
+            dt = datetime.strptime(time_str, '%I:%M %p')
+            return dt.strftime('%H:%M')
+        except ValueError:
+            pass
+
+        # Try to parse as 24-hour format
+        try:
+            dt = datetime.strptime(time_str, '%H:%M')
+            return dt.strftime('%H:%M')
+        except ValueError:
+            pass
+
+        # Try with seconds
+        try:
+            dt = datetime.strptime(time_str, '%H:%M:%S')
+            return dt.strftime('%H:%M')
+        except ValueError:
+            pass
+
+        raise ValueError(f"Cannot parse time '{time_str}'")
 
     def generate_template(self, output_path: str) -> bool:
         """
