@@ -1572,7 +1572,7 @@ OCR Scanning Instructions (To be implemented):
         # Instructions
         instructions = ctk.CTkLabel(
             dialog,
-            text="Please review and fix any errors below. Rows with errors will not be imported.",
+            text="Review data below. Edit dates and times directly in the Visits tab to fix errors.",
             font=ctk.CTkFont(size=13),
             text_color="gray"
         )
@@ -1651,33 +1651,83 @@ OCR Scanning Instructions (To be implemented):
             )
             client_label.pack(anchor="w", padx=10, pady=5)
 
-        # Visits preview tab
+        # Visits preview tab with editable fields
         visits_scroll = ctk.CTkScrollableFrame(tab_visits)
         visits_scroll.pack(fill="both", expand=True, padx=10, pady=10)
 
+        # Store editable visit data
+        self.editable_visits = []
+
         for idx, visit in enumerate(preview_results.get('visits', [])):
-            visit_frame = ctk.CTkFrame(visits_scroll)
-            visit_frame.pack(fill="x", pady=3)
-
             has_error = visit.get('has_error', False)
-            fg_color = "darkred" if has_error else None
 
-            visit_text = f"{idx+1}. {visit['client_name']} - {visit['date']} {visit['start_time']}-{visit['end_time']}"
-            if has_error:
-                visit_text += f" ❌ ERROR: {visit.get('error_msg', 'Unknown error')}"
+            visit_frame = ctk.CTkFrame(visits_scroll, border_width=2, border_color="red" if has_error else "gray")
+            visit_frame.pack(fill="x", pady=8, padx=5)
+            visit_frame.grid_columnconfigure(1, weight=1)
 
-            visit_label = ctk.CTkLabel(
+            # Row number and client name
+            header_text = f"#{idx+1} - {visit['client_name']}"
+            header_label = ctk.CTkLabel(
                 visit_frame,
-                text=visit_text,
-                font=ctk.CTkFont(size=11),
-                text_color="red" if has_error else None
+                text=header_text,
+                font=ctk.CTkFont(size=13, weight="bold")
             )
-            visit_label.pack(anchor="w", padx=10, pady=3)
+            header_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 5))
+
+            # Error message if present
+            if has_error:
+                error_label = ctk.CTkLabel(
+                    visit_frame,
+                    text=f"❌ ERROR: {visit.get('error_msg', 'Unknown error')}",
+                    font=ctk.CTkFont(size=11),
+                    text_color="red"
+                )
+                error_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 5))
+
+            # Editable fields
+            row_num = 2
+
+            # Date field
+            date_label = ctk.CTkLabel(visit_frame, text="Date:", font=ctk.CTkFont(size=12))
+            date_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
+
+            date_entry = ctk.CTkEntry(visit_frame, width=150, font=ctk.CTkFont(size=12))
+            date_entry.insert(0, str(visit.get('date', '')))
+            date_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
+            row_num += 1
+
+            # Start time field
+            start_label = ctk.CTkLabel(visit_frame, text="Start Time:", font=ctk.CTkFont(size=12))
+            start_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
+
+            start_entry = ctk.CTkEntry(visit_frame, width=150, font=ctk.CTkFont(size=12))
+            start_entry.insert(0, str(visit.get('start_time', '')))
+            start_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
+            row_num += 1
+
+            # End time field
+            end_label = ctk.CTkLabel(visit_frame, text="End Time:", font=ctk.CTkFont(size=12))
+            end_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
+
+            end_entry = ctk.CTkEntry(visit_frame, width=150, font=ctk.CTkFont(size=12))
+            end_entry.insert(0, str(visit.get('end_time', '')))
+            end_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
+            row_num += 1
+
+            # Store editable fields
+            self.editable_visits.append({
+                'client_name': visit['client_name'],
+                'date_entry': date_entry,
+                'start_entry': start_entry,
+                'end_entry': end_entry,
+                'notes': visit.get('notes', ''),
+                'original_error': has_error
+            })
 
         # Action message
-        action_text = "Fix errors in your Excel file and re-import, or continue to import valid data only."
-        if not error_count:
-            action_text = "No critical errors found. You may proceed with import."
+        action_text = "Edit any incorrect data in the Visits tab, then click 'Import Data' to proceed."
+        if error_count:
+            action_text = "Fix the errors shown above by editing the visit data in the Visits tab."
 
         action_label = ctk.CTkLabel(
             dialog,
@@ -1691,17 +1741,16 @@ OCR Scanning Instructions (To be implemented):
         btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=(0, 20))
 
-        if not error_count or warning_count > 0:
-            # Allow import if no errors (even if warnings exist)
-            proceed_btn = ctk.CTkButton(
-                btn_frame,
-                text=f"Import Valid Data ({len([v for v in preview_results.get('visits', []) if not v.get('has_error')])} visits)",
-                command=lambda: self.confirm_and_import(dialog, preview_results),
-                font=ctk.CTkFont(size=16),
-                height=45,
-                fg_color="green"
-            )
-            proceed_btn.pack(side=tk.LEFT, padx=5)
+        # Always allow import - edited data will be validated
+        proceed_btn = ctk.CTkButton(
+            btn_frame,
+            text=f"Import Data ({len(preview_results.get('visits', []))} visits)",
+            command=lambda: self.confirm_and_import(dialog, preview_results),
+            font=ctk.CTkFont(size=16),
+            height=45,
+            fg_color="green"
+        )
+        proceed_btn.pack(side=tk.LEFT, padx=5)
 
         cancel_btn = ctk.CTkButton(
             btn_frame,
@@ -1714,17 +1763,81 @@ OCR Scanning Instructions (To be implemented):
         cancel_btn.pack(side=tk.LEFT, padx=5)
 
     def confirm_and_import(self, dialog, preview_results):
-        """Confirm and perform the actual import."""
-        valid_visits = [v for v in preview_results.get('visits', []) if not v.get('has_error')]
+        """Confirm and perform the actual import using edited data."""
+        # Validate and collect edited visit data
+        validated_visits = []
+        validation_errors = []
 
+        for idx, visit_data in enumerate(self.editable_visits):
+            try:
+                date_str = visit_data['date_entry'].get().strip()
+                start_str = visit_data['start_entry'].get().strip()
+                end_str = visit_data['end_entry'].get().strip()
+
+                # Validate date format
+                try:
+                    datetime.strptime(date_str, '%Y-%m-%d')
+                except ValueError:
+                    # Try parsing and converting other formats
+                    try:
+                        from dateutil import parser
+                        parsed_date = parser.parse(date_str)
+                        date_str = parsed_date.strftime('%Y-%m-%d')
+                    except:
+                        validation_errors.append(f"Visit #{idx+1} ({visit_data['client_name']}): Invalid date format")
+                        continue
+
+                # Validate time formats
+                try:
+                    datetime.strptime(start_str, '%H:%M')
+                    datetime.strptime(end_str, '%H:%M')
+                except ValueError:
+                    validation_errors.append(f"Visit #{idx+1} ({visit_data['client_name']}): Invalid time format (use HH:MM)")
+                    continue
+
+                # Calculate duration
+                start = datetime.strptime(start_str, '%H:%M')
+                end = datetime.strptime(end_str, '%H:%M')
+                duration_minutes = (end - start).total_seconds() / 60
+
+                if duration_minutes <= 0:
+                    validation_errors.append(f"Visit #{idx+1} ({visit_data['client_name']}): End time must be after start time")
+                    continue
+
+                # Add to validated visits
+                validated_visits.append({
+                    'client_name': visit_data['client_name'],
+                    'date': date_str,
+                    'start_time': start_str,
+                    'end_time': end_str,
+                    'duration_minutes': duration_minutes,
+                    'notes': visit_data['notes'],
+                    'has_error': False
+                })
+
+            except Exception as e:
+                validation_errors.append(f"Visit #{idx+1} ({visit_data['client_name']}): {str(e)}")
+
+        # Show validation errors if any
+        if validation_errors:
+            error_msg = "Please fix the following errors before importing:\n\n"
+            error_msg += "\n".join(validation_errors[:10])
+            if len(validation_errors) > 10:
+                error_msg += f"\n... and {len(validation_errors) - 10} more errors"
+            messagebox.showerror("Validation Errors", error_msg)
+            return
+
+        # Confirm import with corrected data
         if messagebox.askyesno(
             "Confirm Import",
             f"This will import:\n"
             f"• {len(preview_results.get('clients', []))} clients\n"
-            f"• {len(valid_visits)} visits (skipping {len(preview_results.get('visits', [])) - len(valid_visits)} with errors)\n\n"
+            f"• {len(validated_visits)} visits\n\n"
             f"Continue?"
         ):
             dialog.destroy()
+            # Update preview_results with validated visits
+            preview_results['visits'] = validated_visits
             self.perform_excel_import(preview_results)
 
     def perform_excel_import(self, preview_results):
