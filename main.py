@@ -1729,17 +1729,11 @@ OCR Scanning Instructions (To be implemented):
             date_label = ctk.CTkLabel(visit_frame, text="Date (MM/DD/YYYY):", font=ctk.CTkFont(size=11))
             date_label.grid(row=row_num, column=0, sticky="w", padx=8, pady=4)
 
-            # Format date for display
-            date_val = visit.get('date', '')
-            if date_val:
-                try:
-                    date_obj = datetime.strptime(str(date_val), '%Y-%m-%d')
-                    date_val = date_obj.strftime('%m/%d/%Y')
-                except:
-                    pass
+            # Format date for display using helper function
+            date_val = self.format_date_mdy(str(visit.get('date', '')))
 
             date_entry = ctk.CTkEntry(visit_frame, width=180, font=ctk.CTkFont(size=11))
-            date_entry.insert(0, str(date_val))
+            date_entry.insert(0, date_val)
             date_entry.grid(row=row_num, column=1, sticky="w", padx=8, pady=4)
             row_num += 1
 
@@ -1747,17 +1741,11 @@ OCR Scanning Instructions (To be implemented):
             start_label = ctk.CTkLabel(visit_frame, text="Start (h:MM AM/PM):", font=ctk.CTkFont(size=11))
             start_label.grid(row=row_num, column=0, sticky="w", padx=8, pady=4)
 
-            # Format time for display
-            start_val = visit.get('start_time', '')
-            if start_val:
-                try:
-                    time_obj = datetime.strptime(str(start_val), '%H:%M')
-                    start_val = time_obj.strftime('%-I:%M %p')
-                except:
-                    pass
+            # Format time for display using helper function
+            start_val = self.format_time_12hr(str(visit.get('start_time', '')))
 
             start_entry = ctk.CTkEntry(visit_frame, width=180, font=ctk.CTkFont(size=11))
-            start_entry.insert(0, str(start_val))
+            start_entry.insert(0, start_val)
             start_entry.grid(row=row_num, column=1, sticky="w", padx=8, pady=4)
             row_num += 1
 
@@ -1765,17 +1753,11 @@ OCR Scanning Instructions (To be implemented):
             end_label = ctk.CTkLabel(visit_frame, text="End (h:MM AM/PM):", font=ctk.CTkFont(size=11))
             end_label.grid(row=row_num, column=0, sticky="w", padx=8, pady=4)
 
-            # Format time for display
-            end_val = visit.get('end_time', '')
-            if end_val:
-                try:
-                    time_obj = datetime.strptime(str(end_val), '%H:%M')
-                    end_val = time_obj.strftime('%-I:%M %p')
-                except:
-                    pass
+            # Format time for display using helper function
+            end_val = self.format_time_12hr(str(visit.get('end_time', '')))
 
             end_entry = ctk.CTkEntry(visit_frame, width=180, font=ctk.CTkFont(size=11))
-            end_entry.insert(0, str(end_val))
+            end_entry.insert(0, end_val)
             end_entry.grid(row=row_num, column=1, sticky="w", padx=8, pady=4)
             row_num += 1
 
@@ -2199,7 +2181,12 @@ OCR Scanning Instructions (To be implemented):
         """Convert 24-hour time (HH:MM) to 12-hour format (h:MM AM/PM)."""
         try:
             time_obj = datetime.strptime(time_str, '%H:%M')
-            return time_obj.strftime('%-I:%M %p')  # %-I removes leading zero
+            # Use %I:%M %p and strip leading zero manually for cross-platform compatibility
+            formatted = time_obj.strftime('%I:%M %p')
+            # Remove leading zero from hour (e.g., "09:00 AM" -> "9:00 AM")
+            if formatted[0] == '0':
+                formatted = formatted[1:]
+            return formatted
         except:
             return time_str  # Return original if parsing fails
 
