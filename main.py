@@ -1522,8 +1522,39 @@ OCR Scanning Instructions (To be implemented):
         if not file_path:
             return
 
-        # First, preview and validate the data
-        preview_results = self.excel_importer.preview_import(file_path)
+        # Show loading dialog
+        loading_dialog = ctk.CTkToplevel(self)
+        loading_dialog.title("Loading...")
+        loading_dialog.geometry("300x100")
+        loading_dialog.transient(self)
+        loading_dialog.grab_set()
+
+        # Center the dialog
+        loading_dialog.update_idletasks()
+        x = (loading_dialog.winfo_screenwidth() // 2) - (150)
+        y = (loading_dialog.winfo_screenheight() // 2) - (50)
+        loading_dialog.geometry(f"300x100+{x}+{y}")
+
+        loading_label = ctk.CTkLabel(
+            loading_dialog,
+            text="Reading Excel file...\nPlease wait.",
+            font=ctk.CTkFont(size=14)
+        )
+        loading_label.pack(expand=True)
+
+        # Force update to show dialog
+        loading_dialog.update()
+        self.update()
+
+        # First, preview and validate the data (in a thread-safe way)
+        try:
+            preview_results = self.excel_importer.preview_import(file_path)
+        except Exception as e:
+            loading_dialog.destroy()
+            messagebox.showerror("Import Failed", f"Error reading file: {str(e)}")
+            return
+
+        loading_dialog.destroy()
 
         if not preview_results['success']:
             messagebox.showerror("Import Failed", preview_results.get('error', 'Unknown error'))
@@ -1658,7 +1689,22 @@ OCR Scanning Instructions (To be implemented):
         # Store editable visit data
         self.editable_visits = []
 
-        for idx, visit in enumerate(preview_results.get('visits', [])):
+        total_visits = len(preview_results.get('visits', []))
+
+        # Limit display to first 200 visits to avoid UI slowdown
+        max_display = 200
+        visits_to_show = preview_results.get('visits', [])[:max_display]
+
+        if total_visits > max_display:
+            warning_label = ctk.CTkLabel(
+                visits_scroll,
+                text=f"⚠ Showing first {max_display} of {total_visits} visits for performance.\nAll {total_visits} visits will be imported.",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color="orange"
+            )
+            warning_label.pack(pady=10)
+
+        for idx, visit in enumerate(visits_to_show):
             has_error = visit.get('has_error', False)
 
             visit_frame = ctk.CTkFrame(visits_scroll, border_width=2, border_color="red" if has_error else "gray")
@@ -1723,6 +1769,9 @@ OCR Scanning Instructions (To be implemented):
                 'notes': visit.get('notes', ''),
                 'original_error': has_error
             })
+
+        # Store remaining visits that weren't displayed for editing
+        self.hidden_visits = preview_results.get('visits', [])[max_display:] if total_visits > max_display else []
 
         # Action message
         action_text = "Edit any incorrect data in the Visits tab, then click 'Import Data' to proceed."
@@ -1827,6 +1876,11 @@ OCR Scanning Instructions (To be implemented):
             messagebox.showerror("Validation Errors", error_msg)
             return
 
+        # Add hidden visits (those not displayed for editing) that don't have errors
+        for visit in getattr(self, 'hidden_visits', []):
+            if not visit.get('has_error'):
+                validated_visits.append(visit)
+
         # Confirm import with corrected data
         if messagebox.askyesno(
             "Confirm Import",
@@ -1842,12 +1896,42 @@ OCR Scanning Instructions (To be implemented):
 
     def perform_excel_import(self, preview_results):
         """Actually perform the import to the database."""
+        # Show progress dialog
+        progress_dialog = ctk.CTkToplevel(self)
+        progress_dialog.title("Importing...")
+        progress_dialog.geometry("350x120")
+        progress_dialog.transient(self)
+        progress_dialog.grab_set()
+
+        # Center the dialog
+        progress_dialog.update_idletasks()
+        x = (progress_dialog.winfo_screenwidth() // 2) - (175)
+        y = (progress_dialog.winfo_screenheight() // 2) - (60)
+        progress_dialog.geometry(f"350x120+{x}+{y}")
+
+        progress_label = ctk.CTkLabel(
+            progress_dialog,
+            text=f"Importing {len(preview_results.get('visits', []))} visits...\nPlease wait.",
+            font=ctk.CTkFont(size=14)
+        )
+        progress_label.pack(expand=True, pady=10)
+
+        # Force update to show dialog
+        progress_dialog.update()
+        self.update()
+
+        # Perform import
         results = self.excel_importer.execute_import(preview_results)
+
+        progress_dialog.destroy()
 
         # Build results message
         msg = "Import Complete!\n\n"
         msg += f"Clients added: {results['clients_added']}\n"
         msg += f"Visits added: {results['visits_added']}\n"
+
+        if results.get('errors'):
+            msg += f"\nErrors: {len(results['errors'])}"
 
         messagebox.showinfo("Import Complete", msg)
 

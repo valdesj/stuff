@@ -75,6 +75,9 @@ class ExcelImporter:
         }
 
         try:
+            # Use a transaction for batch import (much faster)
+            cursor = self.db.connection.cursor()
+
             # Get all existing clients
             existing_clients = self.db.get_all_clients(active_only=False)
             client_map = {c['name'].lower(): c['id'] for c in existing_clients}
@@ -83,32 +86,50 @@ class ExcelImporter:
             for client_data in preview_results.get('clients', []):
                 client_name_lower = client_data['name'].lower()
                 if client_name_lower not in client_map:
-                    client_id = self.db.add_client(
-                        name=client_data['name'],
-                        monthly_charge=client_data.get('monthly_charge', 0.0),
-                        notes=client_data.get('notes', '')
-                    )
-                    client_map[client_name_lower] = client_id
+                    cursor.execute("""
+                        INSERT INTO clients (name, email, phone, address, monthly_charge, notes)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        client_data['name'],
+                        client_data.get('email', ''),
+                        client_data.get('phone', ''),
+                        client_data.get('address', ''),
+                        client_data.get('monthly_charge', 0.0),
+                        client_data.get('notes', '')
+                    ))
+                    client_map[client_name_lower] = cursor.lastrowid
                     results['clients_added'] += 1
 
-            # Import visits (only those without errors)
+            # Batch insert visits for better performance
+            visit_batch = []
             for visit_data in preview_results.get('visits', []):
                 if visit_data.get('has_error'):
                     continue  # Skip visits with errors
 
                 client_id = client_map.get(visit_data['client_name'].lower())
                 if client_id:
-                    self.db.add_visit(
-                        client_id=client_id,
-                        visit_date=visit_data['date'],
-                        start_time=visit_data['start_time'],
-                        end_time=visit_data['end_time'],
-                        duration_minutes=visit_data['duration_minutes'],
-                        notes=visit_data.get('notes', '')
-                    )
-                    results['visits_added'] += 1
+                    visit_batch.append((
+                        client_id,
+                        visit_data['date'],
+                        visit_data['start_time'],
+                        visit_data['end_time'],
+                        visit_data['duration_minutes'],
+                        visit_data.get('notes', '')
+                    ))
+
+            # Batch insert all visits at once
+            if visit_batch:
+                cursor.executemany("""
+                    INSERT INTO visits (client_id, visit_date, start_time, end_time, duration_minutes, notes)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, visit_batch)
+                results['visits_added'] = len(visit_batch)
+
+            # Commit the transaction
+            self.db.connection.commit()
 
         except Exception as e:
+            self.db.connection.rollback()
             results['errors'].append(f"Import failed: {str(e)}")
 
         return results
