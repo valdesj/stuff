@@ -77,25 +77,25 @@ class LandscapingApp(ctk.CTk):
     def create_header(self):
         """Create the application header with title and refresh button."""
         header_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
-        header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
+        header_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
         header_frame.grid_columnconfigure(0, weight=1)
 
         title = ctk.CTkLabel(
             header_frame,
             text="🌿 Landscaping Client Tracker",
-            font=ctk.CTkFont(size=28, weight="bold")
+            font=ctk.CTkFont(size=20, weight="bold")
         )
-        title.grid(row=0, column=0, sticky="w", padx=10, pady=10)
+        title.grid(row=0, column=0, sticky="w", padx=8, pady=8)
 
         refresh_btn = ctk.CTkButton(
             header_frame,
             text="Refresh All",
             command=self.refresh_all,
-            font=ctk.CTkFont(size=14),
-            height=40,
-            width=150
+            font=ctk.CTkFont(size=12),
+            height=32,
+            width=120
         )
-        refresh_btn.grid(row=0, column=1, padx=10, pady=10)
+        refresh_btn.grid(row=0, column=1, padx=8, pady=8)
 
     # ==================== DASHBOARD TAB ====================
 
@@ -108,9 +108,9 @@ class LandscapingApp(ctk.CTk):
         header = ctk.CTkLabel(
             self.tab_dashboard,
             text="Client Overview & Profitability",
-            font=ctk.CTkFont(size=20, weight="bold")
+            font=ctk.CTkFont(size=16, weight="bold")
         )
-        header.grid(row=0, column=0, sticky="w", padx=20, pady=20)
+        header.grid(row=0, column=0, sticky="w", padx=15, pady=12)
 
         # Scrollable frame for client cards
         self.dashboard_scroll = ctk.CTkScrollableFrame(self.tab_dashboard)
@@ -152,26 +152,26 @@ class LandscapingApp(ctk.CTk):
             status_color = "red"
 
         # Card frame
-        card = ctk.CTkFrame(parent, border_width=3, border_color=border_color)
-        card.grid(row=row, column=0, sticky="ew", padx=10, pady=10)
+        card = ctk.CTkFrame(parent, border_width=2, border_color=border_color)
+        card.grid(row=row, column=0, sticky="ew", padx=8, pady=6)
         card.grid_columnconfigure(1, weight=1)
 
         # Client name
         name_label = ctk.CTkLabel(
             card,
             text=stats['client_name'],
-            font=ctk.CTkFont(size=18, weight="bold")
+            font=ctk.CTkFont(size=14, weight="bold")
         )
-        name_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=20, pady=(15, 5))
+        name_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 4))
 
         # Status indicator
         status_label = ctk.CTkLabel(
             card,
             text=status_text,
-            font=ctk.CTkFont(size=14, weight="bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             text_color=status_color
         )
-        status_label.grid(row=0, column=2, padx=20, pady=(15, 5))
+        status_label.grid(row=0, column=2, padx=12, pady=(10, 4))
 
         # Statistics grid
         stats_frame = ctk.CTkFrame(card, fg_color="transparent")
@@ -193,19 +193,19 @@ class LandscapingApp(ctk.CTk):
             row_pos = i // 2
 
             item_frame = ctk.CTkFrame(stats_frame, fg_color="transparent")
-            item_frame.grid(row=row_pos, column=col, sticky="w", padx=20, pady=5)
+            item_frame.grid(row=row_pos, column=col, sticky="w", padx=12, pady=3)
 
             lbl = ctk.CTkLabel(
                 item_frame,
                 text=label,
-                font=ctk.CTkFont(size=13)
+                font=ctk.CTkFont(size=11)
             )
-            lbl.grid(row=0, column=0, sticky="w", padx=(0, 10))
+            lbl.grid(row=0, column=0, sticky="w", padx=(0, 8))
 
             val = ctk.CTkLabel(
                 item_frame,
                 text=value,
-                font=ctk.CTkFont(size=13, weight="bold")
+                font=ctk.CTkFont(size=11, weight="bold")
             )
             val.grid(row=0, column=1, sticky="w")
 
@@ -226,9 +226,9 @@ class LandscapingApp(ctk.CTk):
         list_header = ctk.CTkLabel(
             left_frame,
             text="Client List",
-            font=ctk.CTkFont(size=18, weight="bold")
+            font=ctk.CTkFont(size=14, weight="bold")
         )
-        list_header.grid(row=0, column=0, sticky="w", padx=15, pady=(15, 5))
+        list_header.grid(row=0, column=0, sticky="w", padx=12, pady=(12, 4))
 
         # Show inactive clients checkbox
         self.show_inactive_var = tk.BooleanVar(value=False)
@@ -269,9 +269,9 @@ class LandscapingApp(ctk.CTk):
         details_header = ctk.CTkLabel(
             right_frame,
             text="Client Details",
-            font=ctk.CTkFont(size=18, weight="bold")
+            font=ctk.CTkFont(size=14, weight="bold")
         )
-        details_header.grid(row=0, column=0, sticky="w", padx=15, pady=(15, 10))
+        details_header.grid(row=0, column=0, sticky="w", padx=12, pady=(12, 8))
 
         # Scrollable frame for client details
         self.client_details_frame = ctk.CTkScrollableFrame(right_frame)
@@ -742,9 +742,9 @@ class LandscapingApp(ctk.CTk):
         header = ctk.CTkLabel(
             self.tab_visits,
             text="Visit Entry & Management",
-            font=ctk.CTkFont(size=20, weight="bold")
+            font=ctk.CTkFont(size=16, weight="bold")
         )
-        header.grid(row=0, column=0, sticky="w", padx=20, pady=20)
+        header.grid(row=0, column=0, sticky="w", padx=15, pady=12)
 
         # Client selection
         client_frame = ctk.CTkFrame(self.tab_visits)
@@ -826,25 +826,28 @@ class LandscapingApp(ctk.CTk):
     def create_visit_card(self, parent, visit, row):
         """Create a card displaying visit information."""
         card = ctk.CTkFrame(parent, border_width=2)
-        card.grid(row=row, column=0, sticky="ew", padx=10, pady=10)
+        card.grid(row=row, column=0, sticky="ew", padx=8, pady=6)
         card.grid_columnconfigure(1, weight=1)
 
-        # Visit date
+        # Visit date - format as MM/DD/YYYY
+        formatted_date = self.format_date_mdy(visit['visit_date'])
         date_label = ctk.CTkLabel(
             card,
-            text=f"📅 {visit['visit_date']}",
-            font=ctk.CTkFont(size=16, weight="bold")
+            text=f"📅 {formatted_date}",
+            font=ctk.CTkFont(size=13, weight="bold")
         )
-        date_label.grid(row=0, column=0, sticky="w", padx=15, pady=10)
+        date_label.grid(row=0, column=0, sticky="w", padx=12, pady=8)
 
-        # Time info
-        time_text = f"🕐 {visit['start_time']} - {visit['end_time']} ({visit['duration_minutes']:.0f} min)"
+        # Time info - format as 12-hour AM/PM
+        start_time = self.format_time_12hr(visit['start_time'])
+        end_time = self.format_time_12hr(visit['end_time'])
+        time_text = f"🕐 {start_time} - {end_time} ({visit['duration_minutes']:.0f} min)"
         time_label = ctk.CTkLabel(
             card,
             text=time_text,
-            font=ctk.CTkFont(size=14)
+            font=ctk.CTkFont(size=12)
         )
-        time_label.grid(row=1, column=0, sticky="w", padx=15, pady=(0, 10))
+        time_label.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 8))
 
         # Materials used
         materials = self.db.get_visit_materials(visit['id'])
@@ -923,28 +926,28 @@ class LandscapingApp(ctk.CTk):
         header = ctk.CTkLabel(
             dialog,
             text=f"New Visit for {client_name}",
-            font=ctk.CTkFont(size=18, weight="bold")
+            font=ctk.CTkFont(size=15, weight="bold")
         )
-        header.pack(pady=20)
+        header.pack(pady=15)
 
         # Date
-        date_label = ctk.CTkLabel(dialog, text="Date (YYYY-MM-DD):", font=ctk.CTkFont(size=14))
-        date_label.pack(pady=(10, 5))
-        date_entry = ctk.CTkEntry(dialog, placeholder_text="2024-01-15", height=35)
-        date_entry.insert(0, datetime.now().strftime("%Y-%m-%d"))
-        date_entry.pack(pady=5, padx=20, fill="x")
+        date_label = ctk.CTkLabel(dialog, text="Date (MM/DD/YYYY):", font=ctk.CTkFont(size=12))
+        date_label.pack(pady=(8, 4))
+        date_entry = ctk.CTkEntry(dialog, placeholder_text="01/15/2024", height=32)
+        date_entry.insert(0, datetime.now().strftime("%m/%d/%Y"))
+        date_entry.pack(pady=4, padx=20, fill="x")
 
         # Start time
-        start_label = ctk.CTkLabel(dialog, text="Start Time (HH:MM):", font=ctk.CTkFont(size=14))
-        start_label.pack(pady=(10, 5))
-        start_entry = ctk.CTkEntry(dialog, placeholder_text="09:00", height=35)
-        start_entry.pack(pady=5, padx=20, fill="x")
+        start_label = ctk.CTkLabel(dialog, text="Start Time (h:MM AM/PM):", font=ctk.CTkFont(size=12))
+        start_label.pack(pady=(8, 4))
+        start_entry = ctk.CTkEntry(dialog, placeholder_text="9:00 AM", height=32)
+        start_entry.pack(pady=4, padx=20, fill="x")
 
         # End time
-        end_label = ctk.CTkLabel(dialog, text="End Time (HH:MM):", font=ctk.CTkFont(size=14))
-        end_label.pack(pady=(10, 5))
-        end_entry = ctk.CTkEntry(dialog, placeholder_text="11:30", height=35)
-        end_entry.pack(pady=5, padx=20, fill="x")
+        end_label = ctk.CTkLabel(dialog, text="End Time (h:MM AM/PM):", font=ctk.CTkFont(size=12))
+        end_label.pack(pady=(8, 4))
+        end_entry = ctk.CTkEntry(dialog, placeholder_text="11:30 AM", height=32)
+        end_entry.pack(pady=4, padx=20, fill="x")
 
         # Duration (calculated)
         duration_var = tk.StringVar(value="Duration will be calculated")
@@ -958,8 +961,22 @@ class LandscapingApp(ctk.CTk):
 
         def calculate_duration():
             try:
-                start = datetime.strptime(start_entry.get(), "%H:%M")
-                end = datetime.strptime(end_entry.get(), "%H:%M")
+                # Parse 12-hour AM/PM format
+                start_str = start_entry.get().strip()
+                end_str = end_entry.get().strip()
+
+                # Try multiple time formats
+                for fmt in ['%I:%M %p', '%I:%M%p', '%H:%M']:
+                    try:
+                        start = datetime.strptime(start_str, fmt)
+                        end = datetime.strptime(end_str, fmt)
+                        break
+                    except:
+                        continue
+                else:
+                    duration_var.set("Invalid time format")
+                    return None
+
                 duration = (end - start).total_seconds() / 60
                 if duration < 0:
                     duration_var.set("End time must be after start time")
@@ -1030,12 +1047,42 @@ class LandscapingApp(ctk.CTk):
                 messagebox.showerror("Error", "Please fill in valid date and times")
                 return
 
+            # Convert date from MM/DD/YYYY to YYYY-MM-DD for database
+            try:
+                date_obj = datetime.strptime(date_str, '%m/%d/%Y')
+                db_date = date_obj.strftime('%Y-%m-%d')
+            except:
+                try:
+                    # Also accept YYYY-MM-DD
+                    date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                    db_date = date_str
+                except:
+                    messagebox.showerror("Error", "Invalid date format. Use MM/DD/YYYY")
+                    return
+
+            # Convert times from 12-hour to 24-hour HH:MM for database
+            try:
+                for fmt in ['%I:%M %p', '%I:%M%p', '%H:%M']:
+                    try:
+                        start_obj = datetime.strptime(start_str, fmt)
+                        end_obj = datetime.strptime(end_str, fmt)
+                        db_start = start_obj.strftime('%H:%M')
+                        db_end = end_obj.strftime('%H:%M')
+                        break
+                    except:
+                        continue
+                else:
+                    raise ValueError()
+            except:
+                messagebox.showerror("Error", "Invalid time format. Use h:MM AM/PM")
+                return
+
             # Add visit
             visit_id = self.db.add_visit(
                 client_id=client_id,
-                visit_date=date_str,
-                start_time=start_str,
-                end_time=end_str,
+                visit_date=db_date,
+                start_time=db_start,
+                end_time=db_end,
                 duration_minutes=duration,
                 notes=notes_entry.get("1.0", "end-1c")
             )
@@ -1093,18 +1140,18 @@ class LandscapingApp(ctk.CTk):
         header = ctk.CTkLabel(
             self.tab_materials,
             text="Materials & Services Catalog",
-            font=ctk.CTkFont(size=20, weight="bold")
+            font=ctk.CTkFont(size=16, weight="bold")
         )
-        header.grid(row=0, column=0, sticky="w", padx=20, pady=20)
+        header.grid(row=0, column=0, sticky="w", padx=15, pady=12)
 
         # Description
         desc = ctk.CTkLabel(
             self.tab_materials,
             text="Manage your catalog of materials and services. Global items have default costs,\nwhich can be customized per client in the Clients tab.",
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=11),
             text_color="gray"
         )
-        desc.grid(row=1, column=0, sticky="w", padx=20, pady=(0, 10))
+        desc.grid(row=1, column=0, sticky="w", padx=15, pady=(0, 8))
 
         # Materials list
         self.materials_scroll = ctk.CTkScrollableFrame(self.tab_materials)
@@ -1420,17 +1467,17 @@ class LandscapingApp(ctk.CTk):
         header = ctk.CTkLabel(
             self.tab_import,
             text="Import Historical Data",
-            font=ctk.CTkFont(size=20, weight="bold")
+            font=ctk.CTkFont(size=16, weight="bold")
         )
-        header.grid(row=0, column=0, sticky="w", padx=20, pady=20)
+        header.grid(row=0, column=0, sticky="w", padx=15, pady=12)
 
         desc = ctk.CTkLabel(
             self.tab_import,
             text="Import client and visit data from Excel files.\nComing soon: OCR scanning from paper records.",
-            font=ctk.CTkFont(size=14),
+            font=ctk.CTkFont(size=11),
             text_color="gray"
         )
-        desc.grid(row=1, column=0, sticky="w", padx=20, pady=(0, 20))
+        desc.grid(row=1, column=0, sticky="w", padx=15, pady=(0, 15))
 
         excel_btn = ctk.CTkButton(
             self.tab_import,
@@ -1600,14 +1647,14 @@ OCR Scanning Instructions (To be implemented):
         header = ctk.CTkLabel(
             dialog,
             text=f"Found {error_count} visits with errors out of {total_visits} total",
-            font=ctk.CTkFont(size=18, weight="bold"),
+            font=ctk.CTkFont(size=15, weight="bold"),
             text_color="red" if error_count > 0 else "green"
         )
-        header.pack(pady=20)
+        header.pack(pady=15)
 
         # Summary of import
         summary_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        summary_frame.pack(pady=(0, 10))
+        summary_frame.pack(pady=(0, 8))
 
         summary_text = (
             f"Ready to import:\n"
@@ -1619,7 +1666,7 @@ OCR Scanning Instructions (To be implemented):
         summary_label = ctk.CTkLabel(
             summary_frame,
             text=summary_text,
-            font=ctk.CTkFont(size=14),
+            font=ctk.CTkFont(size=12),
             justify="left"
         )
         summary_label.pack()
@@ -1629,19 +1676,19 @@ OCR Scanning Instructions (To be implemented):
             instructions = ctk.CTkLabel(
                 dialog,
                 text="Fix the errors below by editing the date and time fields, then click 'Import Data'.",
-                font=ctk.CTkFont(size=13),
+                font=ctk.CTkFont(size=11),
                 text_color="orange"
             )
-            instructions.pack(pady=(0, 10))
+            instructions.pack(pady=(0, 8))
 
         # Scrollable frame for error visits only
         scroll_label = ctk.CTkLabel(
             dialog,
             text="Visits with Errors (fix before importing):" if error_count > 0 else "All visits are valid!",
-            font=ctk.CTkFont(size=15, weight="bold"),
+            font=ctk.CTkFont(size=13, weight="bold"),
             text_color="red" if error_count > 0 else "green"
         )
-        scroll_label.pack(pady=(10, 5))
+        scroll_label.pack(pady=(8, 4))
 
         visits_scroll = ctk.CTkScrollableFrame(dialog, height=350)
         visits_scroll.pack(fill="both", expand=True, padx=20, pady=(0, 20))
@@ -1661,48 +1708,75 @@ OCR Scanning Instructions (To be implemented):
             header_label = ctk.CTkLabel(
                 visit_frame,
                 text=header_text,
-                font=ctk.CTkFont(size=14, weight="bold")
+                font=ctk.CTkFont(size=12, weight="bold")
             )
-            header_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 5))
+            header_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(8, 4))
 
             # Error message
             error_label = ctk.CTkLabel(
                 visit_frame,
                 text=f"❌ {visit.get('error_msg', 'Unknown error')}",
-                font=ctk.CTkFont(size=12),
+                font=ctk.CTkFont(size=11),
                 text_color="red",
                 wraplength=850
             )
-            error_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
+            error_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 8))
 
             # Editable fields
             row_num = 2
 
-            # Date field
-            date_label = ctk.CTkLabel(visit_frame, text="Date:", font=ctk.CTkFont(size=13))
-            date_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
+            # Date field - format as MM/DD/YYYY
+            date_label = ctk.CTkLabel(visit_frame, text="Date (MM/DD/YYYY):", font=ctk.CTkFont(size=11))
+            date_label.grid(row=row_num, column=0, sticky="w", padx=8, pady=4)
 
-            date_entry = ctk.CTkEntry(visit_frame, width=200, font=ctk.CTkFont(size=13))
-            date_entry.insert(0, str(visit.get('date', '')))
-            date_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
+            # Format date for display
+            date_val = visit.get('date', '')
+            if date_val:
+                try:
+                    date_obj = datetime.strptime(str(date_val), '%Y-%m-%d')
+                    date_val = date_obj.strftime('%m/%d/%Y')
+                except:
+                    pass
+
+            date_entry = ctk.CTkEntry(visit_frame, width=180, font=ctk.CTkFont(size=11))
+            date_entry.insert(0, str(date_val))
+            date_entry.grid(row=row_num, column=1, sticky="w", padx=8, pady=4)
             row_num += 1
 
-            # Start time field
-            start_label = ctk.CTkLabel(visit_frame, text="Start Time:", font=ctk.CTkFont(size=13))
-            start_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
+            # Start time field - format as 12-hour
+            start_label = ctk.CTkLabel(visit_frame, text="Start (h:MM AM/PM):", font=ctk.CTkFont(size=11))
+            start_label.grid(row=row_num, column=0, sticky="w", padx=8, pady=4)
 
-            start_entry = ctk.CTkEntry(visit_frame, width=200, font=ctk.CTkFont(size=13))
-            start_entry.insert(0, str(visit.get('start_time', '')))
-            start_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
+            # Format time for display
+            start_val = visit.get('start_time', '')
+            if start_val:
+                try:
+                    time_obj = datetime.strptime(str(start_val), '%H:%M')
+                    start_val = time_obj.strftime('%-I:%M %p')
+                except:
+                    pass
+
+            start_entry = ctk.CTkEntry(visit_frame, width=180, font=ctk.CTkFont(size=11))
+            start_entry.insert(0, str(start_val))
+            start_entry.grid(row=row_num, column=1, sticky="w", padx=8, pady=4)
             row_num += 1
 
-            # End time field
-            end_label = ctk.CTkLabel(visit_frame, text="End Time:", font=ctk.CTkFont(size=13))
-            end_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
+            # End time field - format as 12-hour
+            end_label = ctk.CTkLabel(visit_frame, text="End (h:MM AM/PM):", font=ctk.CTkFont(size=11))
+            end_label.grid(row=row_num, column=0, sticky="w", padx=8, pady=4)
 
-            end_entry = ctk.CTkEntry(visit_frame, width=200, font=ctk.CTkFont(size=13))
-            end_entry.insert(0, str(visit.get('end_time', '')))
-            end_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
+            # Format time for display
+            end_val = visit.get('end_time', '')
+            if end_val:
+                try:
+                    time_obj = datetime.strptime(str(end_val), '%H:%M')
+                    end_val = time_obj.strftime('%-I:%M %p')
+                except:
+                    pass
+
+            end_entry = ctk.CTkEntry(visit_frame, width=180, font=ctk.CTkFont(size=11))
+            end_entry.insert(0, str(end_val))
+            end_entry.grid(row=row_num, column=1, sticky="w", padx=8, pady=4)
             row_num += 1
 
             # Store editable fields
@@ -1762,25 +1836,36 @@ OCR Scanning Instructions (To be implemented):
                 start_str = visit_data['start_entry'].get().strip()
                 end_str = visit_data['end_entry'].get().strip()
 
-                # Validate date format
+                # Validate and convert date format from MM/DD/YYYY to YYYY-MM-DD
                 try:
-                    datetime.strptime(date_str, '%Y-%m-%d')
+                    date_obj = datetime.strptime(date_str, '%m/%d/%Y')
+                    date_str = date_obj.strftime('%Y-%m-%d')
                 except ValueError:
-                    # Try parsing and converting other formats
+                    # Try other formats
                     try:
                         from dateutil import parser
                         parsed_date = parser.parse(date_str)
                         date_str = parsed_date.strftime('%Y-%m-%d')
                     except:
-                        validation_errors.append(f"Visit #{idx+1} ({visit_data['client_name']}): Invalid date format")
+                        validation_errors.append(f"Visit #{idx+1} ({visit_data['client_name']}): Invalid date format (use MM/DD/YYYY)")
                         continue
 
-                # Validate time formats
+                # Validate and convert time formats from 12-hour to 24-hour
                 try:
-                    datetime.strptime(start_str, '%H:%M')
-                    datetime.strptime(end_str, '%H:%M')
+                    # Try parsing 12-hour format first
+                    for fmt in ['%I:%M %p', '%I:%M%p', '%H:%M']:
+                        try:
+                            start_obj = datetime.strptime(start_str, fmt)
+                            end_obj = datetime.strptime(end_str, fmt)
+                            start_str = start_obj.strftime('%H:%M')
+                            end_str = end_obj.strftime('%H:%M')
+                            break
+                        except:
+                            continue
+                    else:
+                        raise ValueError()
                 except ValueError:
-                    validation_errors.append(f"Visit #{idx+1} ({visit_data['client_name']}): Invalid time format (use HH:MM)")
+                    validation_errors.append(f"Visit #{idx+1} ({visit_data['client_name']}): Invalid time format (use h:MM AM/PM)")
                     continue
 
                 # Calculate duration
@@ -2109,6 +2194,22 @@ OCR Scanning Instructions (To be implemented):
         cancel_btn.pack(side=tk.LEFT, padx=5)
 
     # ==================== UTILITY METHODS ====================
+
+    def format_time_12hr(self, time_str: str) -> str:
+        """Convert 24-hour time (HH:MM) to 12-hour format (h:MM AM/PM)."""
+        try:
+            time_obj = datetime.strptime(time_str, '%H:%M')
+            return time_obj.strftime('%-I:%M %p')  # %-I removes leading zero
+        except:
+            return time_str  # Return original if parsing fails
+
+    def format_date_mdy(self, date_str: str) -> str:
+        """Convert date (YYYY-MM-DD) to MM/DD/YYYY format."""
+        try:
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+            return date_obj.strftime('%m/%d/%Y')
+        except:
+            return date_str  # Return original if parsing fails
 
     def refresh_all(self):
         """Refresh all data displays."""
