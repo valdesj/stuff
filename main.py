@@ -1,0 +1,1811 @@
+"""
+Landscaping Client Tracker - Main Application
+A desktop application for managing landscaping clients, visits, and costs.
+"""
+import customtkinter as ctk
+from database import Database
+from excel_importer import ExcelImporter
+from ocr_scanner import OCRScanner
+from datetime import datetime, timedelta
+import tkinter as tk
+from tkinter import messagebox, ttk, filedialog
+from typing import Optional
+
+
+# Configure CustomTkinter
+ctk.set_appearance_mode("light")  # Light mode for older users
+ctk.set_default_color_theme("blue")
+
+
+class LandscapingApp(ctk.CTk):
+    """Main application window for the Landscaping Client Tracker."""
+
+    def __init__(self):
+        super().__init__()
+
+        # Initialize database
+        self.db = Database()
+
+        # Initialize importers
+        self.excel_importer = ExcelImporter(self.db)
+        self.ocr_scanner = OCRScanner()
+
+        # Configure window
+        self.title("Landscaping Client Tracker")
+        self.geometry("1200x800")
+
+        # Configure grid
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        # Create main container
+        self.main_container = ctk.CTkFrame(self)
+        self.main_container.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.main_container.grid_columnconfigure(0, weight=1)
+        self.main_container.grid_rowconfigure(1, weight=1)
+
+        # Create header
+        self.create_header()
+
+        # Create tabview for different sections
+        self.tabview = ctk.CTkTabview(self.main_container, height=700)
+        self.tabview.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+
+        # Add tabs
+        self.tab_dashboard = self.tabview.add("Dashboard")
+        self.tab_clients = self.tabview.add("Clients")
+        self.tab_visits = self.tabview.add("Visits")
+        self.tab_materials = self.tabview.add("Materials")
+        self.tab_import = self.tabview.add("Import Data")
+
+        # Initialize tabs
+        self.init_dashboard_tab()
+        self.init_clients_tab()
+        self.init_visits_tab()
+        self.init_materials_tab()
+        self.init_import_tab()
+
+        # Current selections
+        self.current_client_id = None
+        self.current_visit_id = None
+
+        # Load initial data
+        self.refresh_dashboard()
+        self.refresh_clients_list()
+        self.refresh_materials_list()
+
+    def create_header(self):
+        """Create the application header with title and refresh button."""
+        header_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
+        header_frame.grid_columnconfigure(0, weight=1)
+
+        title = ctk.CTkLabel(
+            header_frame,
+            text="🌿 Landscaping Client Tracker",
+            font=ctk.CTkFont(size=28, weight="bold")
+        )
+        title.grid(row=0, column=0, sticky="w", padx=10, pady=10)
+
+        refresh_btn = ctk.CTkButton(
+            header_frame,
+            text="Refresh All",
+            command=self.refresh_all,
+            font=ctk.CTkFont(size=14),
+            height=40,
+            width=150
+        )
+        refresh_btn.grid(row=0, column=1, padx=10, pady=10)
+
+    # ==================== DASHBOARD TAB ====================
+
+    def init_dashboard_tab(self):
+        """Initialize the dashboard tab with client statistics."""
+        self.tab_dashboard.grid_columnconfigure(0, weight=1)
+        self.tab_dashboard.grid_rowconfigure(1, weight=1)
+
+        # Header
+        header = ctk.CTkLabel(
+            self.tab_dashboard,
+            text="Client Overview & Profitability",
+            font=ctk.CTkFont(size=20, weight="bold")
+        )
+        header.grid(row=0, column=0, sticky="w", padx=20, pady=20)
+
+        # Scrollable frame for client cards
+        self.dashboard_scroll = ctk.CTkScrollableFrame(self.tab_dashboard)
+        self.dashboard_scroll.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        self.dashboard_scroll.grid_columnconfigure(0, weight=1)
+
+    def refresh_dashboard(self):
+        """Refresh the dashboard with updated statistics."""
+        # Clear existing widgets
+        for widget in self.dashboard_scroll.winfo_children():
+            widget.destroy()
+
+        # Get all client statistics
+        stats_list = self.db.get_all_client_statistics(active_only=True)
+
+        if not stats_list:
+            no_data = ctk.CTkLabel(
+                self.dashboard_scroll,
+                text="No active clients. Add clients in the Clients tab.",
+                font=ctk.CTkFont(size=16)
+            )
+            no_data.grid(row=0, column=0, pady=50)
+            return
+
+        # Create a card for each client
+        for idx, stats in enumerate(stats_list):
+            self.create_client_card(self.dashboard_scroll, stats, idx)
+
+    def create_client_card(self, parent, stats, row):
+        """Create a visual card showing client statistics."""
+        # Determine color based on profitability
+        if stats['is_profitable']:
+            border_color = "green"
+            status_text = "✓ PROFITABLE"
+            status_color = "green"
+        else:
+            border_color = "red"
+            status_text = "⚠ LOSING MONEY"
+            status_color = "red"
+
+        # Card frame
+        card = ctk.CTkFrame(parent, border_width=3, border_color=border_color)
+        card.grid(row=row, column=0, sticky="ew", padx=10, pady=10)
+        card.grid_columnconfigure(1, weight=1)
+
+        # Client name
+        name_label = ctk.CTkLabel(
+            card,
+            text=stats['client_name'],
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        name_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=20, pady=(15, 5))
+
+        # Status indicator
+        status_label = ctk.CTkLabel(
+            card,
+            text=status_text,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=status_color
+        )
+        status_label.grid(row=0, column=2, padx=20, pady=(15, 5))
+
+        # Statistics grid
+        stats_frame = ctk.CTkFrame(card, fg_color="transparent")
+        stats_frame.grid(row=1, column=0, columnspan=3, sticky="ew", padx=20, pady=10)
+
+        # Create stat items
+        stat_items = [
+            ("Visits Recorded:", f"{stats['visit_count']}"),
+            ("Total Material Costs:", f"${stats['total_material_cost']:.2f}"),
+            ("Avg Cost per Visit:", f"${stats['avg_cost_per_visit']:.2f}"),
+            ("Est. Visits/Year:", f"{stats['visits_per_year']:.1f}"),
+            ("Calculated Monthly Cost:", f"${stats['calculated_monthly_cost']:.2f}"),
+            ("Actual Monthly Charge:", f"${stats['actual_monthly_charge']:.2f}"),
+            ("Monthly Profit/Loss:", f"${stats['monthly_profit_loss']:.2f}"),
+        ]
+
+        for i, (label, value) in enumerate(stat_items):
+            col = i % 2
+            row_pos = i // 2
+
+            item_frame = ctk.CTkFrame(stats_frame, fg_color="transparent")
+            item_frame.grid(row=row_pos, column=col, sticky="w", padx=20, pady=5)
+
+            lbl = ctk.CTkLabel(
+                item_frame,
+                text=label,
+                font=ctk.CTkFont(size=13)
+            )
+            lbl.grid(row=0, column=0, sticky="w", padx=(0, 10))
+
+            val = ctk.CTkLabel(
+                item_frame,
+                text=value,
+                font=ctk.CTkFont(size=13, weight="bold")
+            )
+            val.grid(row=0, column=1, sticky="w")
+
+    # ==================== CLIENTS TAB ====================
+
+    def init_clients_tab(self):
+        """Initialize the clients management tab."""
+        self.tab_clients.grid_columnconfigure(0, weight=1)
+        self.tab_clients.grid_columnconfigure(1, weight=2)
+        self.tab_clients.grid_rowconfigure(1, weight=1)
+
+        # Left side - Client list
+        left_frame = ctk.CTkFrame(self.tab_clients)
+        left_frame.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(10, 5), pady=10)
+        left_frame.grid_columnconfigure(0, weight=1)
+        left_frame.grid_rowconfigure(2, weight=1)
+
+        list_header = ctk.CTkLabel(
+            left_frame,
+            text="Client List",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        list_header.grid(row=0, column=0, sticky="w", padx=15, pady=(15, 5))
+
+        # Show inactive clients checkbox
+        self.show_inactive_var = tk.BooleanVar(value=False)
+        inactive_check = ctk.CTkCheckBox(
+            left_frame,
+            text="Show Inactive Clients",
+            variable=self.show_inactive_var,
+            command=self.refresh_clients_list,
+            font=ctk.CTkFont(size=13)
+        )
+        inactive_check.grid(row=1, column=0, sticky="w", padx=15, pady=5)
+
+        # Client listbox
+        self.clients_listbox = tk.Listbox(
+            left_frame,
+            font=("Arial", 13),
+            selectmode=tk.SINGLE
+        )
+        self.clients_listbox.grid(row=2, column=0, sticky="nsew", padx=15, pady=(5, 10))
+        self.clients_listbox.bind('<<ListboxSelect>>', self.on_client_select)
+
+        # Add client button
+        add_btn = ctk.CTkButton(
+            left_frame,
+            text="+ Add New Client",
+            command=self.add_new_client,
+            font=ctk.CTkFont(size=14),
+            height=40
+        )
+        add_btn.grid(row=3, column=0, sticky="ew", padx=15, pady=(0, 15))
+
+        # Right side - Client details and materials
+        right_frame = ctk.CTkFrame(self.tab_clients)
+        right_frame.grid(row=0, column=1, rowspan=2, sticky="nsew", padx=(5, 10), pady=10)
+        right_frame.grid_columnconfigure(0, weight=1)
+        right_frame.grid_rowconfigure(1, weight=1)
+
+        details_header = ctk.CTkLabel(
+            right_frame,
+            text="Client Details",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        details_header.grid(row=0, column=0, sticky="w", padx=15, pady=(15, 10))
+
+        # Scrollable frame for client details
+        self.client_details_frame = ctk.CTkScrollableFrame(right_frame)
+        self.client_details_frame.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 15))
+        self.client_details_frame.grid_columnconfigure(1, weight=1)
+
+        # Initially show "Select a client" message
+        self.show_client_placeholder()
+
+    def show_client_placeholder(self):
+        """Show placeholder message when no client is selected."""
+        for widget in self.client_details_frame.winfo_children():
+            widget.destroy()
+
+        placeholder = ctk.CTkLabel(
+            self.client_details_frame,
+            text="← Select a client to view details",
+            font=ctk.CTkFont(size=16),
+            text_color="gray"
+        )
+        placeholder.grid(row=0, column=0, pady=50)
+
+    def refresh_clients_list(self):
+        """Refresh the clients listbox."""
+        self.clients_listbox.delete(0, tk.END)
+        active_only = not self.show_inactive_var.get()
+        clients = self.db.get_all_clients(active_only=active_only)
+
+        for client in clients:
+            display_name = client['name']
+            if not client['is_active']:
+                display_name += " (Inactive)"
+            self.clients_listbox.insert(tk.END, display_name)
+            self.clients_listbox.itemconfig(tk.END, {'selectbackground': '#1f6aa5'})
+
+        # Store client IDs for reference
+        self.client_ids = [c['id'] for c in clients]
+
+    def on_client_select(self, event):
+        """Handle client selection from listbox."""
+        selection = self.clients_listbox.curselection()
+        if not selection:
+            return
+
+        idx = selection[0]
+        self.current_client_id = self.client_ids[idx]
+        self.show_client_details(self.current_client_id)
+
+    def show_client_details(self, client_id: int):
+        """Display detailed information for a selected client."""
+        # Clear existing widgets
+        for widget in self.client_details_frame.winfo_children():
+            widget.destroy()
+
+        client = self.db.get_client(client_id)
+        if not client:
+            return
+
+        row = 0
+
+        # Client information form
+        fields = [
+            ("Name:", "name"),
+            ("Email:", "email"),
+            ("Phone:", "phone"),
+            ("Address:", "address"),
+            ("Monthly Charge ($):", "monthly_charge"),
+            ("Notes:", "notes"),
+        ]
+
+        self.client_entries = {}
+
+        for label_text, field_name in fields:
+            label = ctk.CTkLabel(
+                self.client_details_frame,
+                text=label_text,
+                font=ctk.CTkFont(size=14)
+            )
+            label.grid(row=row, column=0, sticky="w", padx=10, pady=8)
+
+            if field_name == "notes":
+                entry = ctk.CTkTextbox(
+                    self.client_details_frame,
+                    height=80,
+                    font=ctk.CTkFont(size=13)
+                )
+                entry.insert("1.0", client.get(field_name, ""))
+            else:
+                entry = ctk.CTkEntry(
+                    self.client_details_frame,
+                    font=ctk.CTkFont(size=13),
+                    height=35
+                )
+                entry.insert(0, str(client.get(field_name, "")))
+
+            entry.grid(row=row, column=1, sticky="ew", padx=10, pady=8)
+            self.client_entries[field_name] = entry
+            row += 1
+
+        # Buttons row
+        btn_frame = ctk.CTkFrame(self.client_details_frame, fg_color="transparent")
+        btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=15)
+        row += 1
+
+        save_btn = ctk.CTkButton(
+            btn_frame,
+            text="Save Changes",
+            command=lambda: self.save_client_changes(client_id),
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="green"
+        )
+        save_btn.pack(side=tk.LEFT, padx=5)
+
+        if client['is_active']:
+            deactivate_btn = ctk.CTkButton(
+                btn_frame,
+                text="Deactivate Client",
+                command=lambda: self.deactivate_client(client_id),
+                font=ctk.CTkFont(size=14),
+                height=40,
+                fg_color="orange"
+            )
+            deactivate_btn.pack(side=tk.LEFT, padx=5)
+        else:
+            activate_btn = ctk.CTkButton(
+                btn_frame,
+                text="Reactivate Client",
+                command=lambda: self.activate_client(client_id),
+                font=ctk.CTkFont(size=14),
+                height=40,
+                fg_color="blue"
+            )
+            activate_btn.pack(side=tk.LEFT, padx=5)
+
+        delete_btn = ctk.CTkButton(
+            btn_frame,
+            text="Delete Permanently",
+            command=lambda: self.delete_client(client_id),
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="red"
+        )
+        delete_btn.pack(side=tk.LEFT, padx=5)
+
+        # Client materials section
+        materials_header = ctk.CTkLabel(
+            self.client_details_frame,
+            text="Materials & Services for this Client",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        materials_header.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(20, 10))
+        row += 1
+
+        # Materials list
+        client_materials = self.db.get_client_materials(client_id)
+
+        if client_materials:
+            for mat in client_materials:
+                mat_frame = ctk.CTkFrame(self.client_details_frame)
+                mat_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
+                mat_frame.grid_columnconfigure(1, weight=1)
+
+                name_lbl = ctk.CTkLabel(
+                    mat_frame,
+                    text=mat['name'],
+                    font=ctk.CTkFont(size=13, weight="bold")
+                )
+                name_lbl.grid(row=0, column=0, sticky="w", padx=10, pady=10)
+
+                cost_text = f"${mat['effective_cost']:.2f}"
+                if mat['is_global']:
+                    cost_text += " (Global)"
+                else:
+                    cost_text += " (Custom)"
+
+                cost_lbl = ctk.CTkLabel(
+                    mat_frame,
+                    text=cost_text,
+                    font=ctk.CTkFont(size=13)
+                )
+                cost_lbl.grid(row=0, column=1, sticky="e", padx=10, pady=10)
+
+                remove_btn = ctk.CTkButton(
+                    mat_frame,
+                    text="Remove",
+                    command=lambda m=mat: self.remove_client_material(client_id, m['material_id']),
+                    width=80,
+                    height=30,
+                    fg_color="red"
+                )
+                remove_btn.grid(row=0, column=2, padx=10, pady=10)
+                row += 1
+        else:
+            no_mat = ctk.CTkLabel(
+                self.client_details_frame,
+                text="No materials assigned yet",
+                font=ctk.CTkFont(size=13),
+                text_color="gray"
+            )
+            no_mat.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+            row += 1
+
+        # Add material button
+        add_mat_btn = ctk.CTkButton(
+            self.client_details_frame,
+            text="+ Add Material/Service",
+            command=lambda: self.add_material_to_client(client_id),
+            font=ctk.CTkFont(size=14),
+            height=40
+        )
+        add_mat_btn.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+
+    def add_new_client(self):
+        """Open dialog to add a new client."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Add New Client")
+        dialog.geometry("500x600")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (600 // 2)
+        dialog.geometry(f"500x600+{x}+{y}")
+
+        fields = [
+            ("Name *:", "name"),
+            ("Email:", "email"),
+            ("Phone:", "phone"),
+            ("Address:", "address"),
+            ("Monthly Charge ($) *:", "monthly_charge"),
+            ("Notes:", "notes"),
+        ]
+
+        entries = {}
+        row = 0
+
+        header = ctk.CTkLabel(
+            dialog,
+            text="New Client Information",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        header.grid(row=row, column=0, columnspan=2, pady=20)
+        row += 1
+
+        for label_text, field_name in fields:
+            label = ctk.CTkLabel(dialog, text=label_text, font=ctk.CTkFont(size=14))
+            label.grid(row=row, column=0, sticky="w", padx=20, pady=8)
+
+            if field_name == "notes":
+                entry = ctk.CTkTextbox(dialog, height=80, font=ctk.CTkFont(size=13))
+            else:
+                entry = ctk.CTkEntry(dialog, font=ctk.CTkFont(size=13), height=35)
+
+            entry.grid(row=row, column=1, sticky="ew", padx=20, pady=8)
+            entries[field_name] = entry
+            row += 1
+
+        dialog.grid_columnconfigure(1, weight=1)
+
+        def save_new_client():
+            name = entries['name'].get().strip()
+            monthly_charge = entries['monthly_charge'].get().strip()
+
+            if not name:
+                messagebox.showerror("Error", "Client name is required")
+                return
+
+            try:
+                monthly_charge = float(monthly_charge) if monthly_charge else 0.0
+            except ValueError:
+                messagebox.showerror("Error", "Monthly charge must be a number")
+                return
+
+            notes_text = entries['notes'].get("1.0", "end-1c") if 'notes' in entries else ""
+
+            client_id = self.db.add_client(
+                name=name,
+                email=entries['email'].get().strip(),
+                phone=entries['phone'].get().strip(),
+                address=entries['address'].get().strip(),
+                monthly_charge=monthly_charge,
+                notes=notes_text
+            )
+
+            messagebox.showinfo("Success", f"Client '{name}' added successfully!")
+            dialog.destroy()
+            self.refresh_clients_list()
+            self.refresh_dashboard()
+
+        save_btn = ctk.CTkButton(
+            dialog,
+            text="Save Client",
+            command=save_new_client,
+            font=ctk.CTkFont(size=16),
+            height=45,
+            fg_color="green"
+        )
+        save_btn.grid(row=row, column=0, columnspan=2, sticky="ew", padx=20, pady=20)
+
+    def save_client_changes(self, client_id: int):
+        """Save changes to client information."""
+        try:
+            updates = {}
+            for field, entry in self.client_entries.items():
+                if field == "notes":
+                    updates[field] = entry.get("1.0", "end-1c")
+                elif field == "monthly_charge":
+                    updates[field] = float(entry.get())
+                else:
+                    updates[field] = entry.get().strip()
+
+            self.db.update_client(client_id, **updates)
+            messagebox.showinfo("Success", "Client updated successfully!")
+            self.refresh_clients_list()
+            self.refresh_dashboard()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to update client: {str(e)}")
+
+    def deactivate_client(self, client_id: int):
+        """Deactivate a client."""
+        if messagebox.askyesno("Confirm", "Deactivate this client? They will be hidden from active views."):
+            self.db.deactivate_client(client_id)
+            messagebox.showinfo("Success", "Client deactivated")
+            self.refresh_clients_list()
+            self.refresh_dashboard()
+            self.show_client_placeholder()
+
+    def activate_client(self, client_id: int):
+        """Reactivate an inactive client."""
+        self.db.activate_client(client_id)
+        messagebox.showinfo("Success", "Client reactivated")
+        self.refresh_clients_list()
+        self.refresh_dashboard()
+        self.show_client_details(client_id)
+
+    def delete_client(self, client_id: int):
+        """Permanently delete a client."""
+        if messagebox.askyesno(
+            "Confirm Delete",
+            "PERMANENTLY delete this client and all related data? This cannot be undone!"
+        ):
+            self.db.delete_client(client_id)
+            messagebox.showinfo("Success", "Client deleted permanently")
+            self.refresh_clients_list()
+            self.refresh_dashboard()
+            self.show_client_placeholder()
+
+    def add_material_to_client(self, client_id: int):
+        """Open dialog to add a material/service to a client."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Add Material/Service to Client")
+        dialog.geometry("500x400")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (400 // 2)
+        dialog.geometry(f"500x400+{x}+{y}")
+
+        header = ctk.CTkLabel(
+            dialog,
+            text="Select Material/Service",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        header.pack(pady=20)
+
+        # Get available materials
+        all_materials = self.db.get_all_materials()
+        client_materials = self.db.get_client_materials(client_id)
+        client_material_ids = {m['material_id'] for m in client_materials}
+
+        # Filter out already assigned materials
+        available_materials = [m for m in all_materials if m['id'] not in client_material_ids]
+
+        if not available_materials:
+            msg = ctk.CTkLabel(
+                dialog,
+                text="All materials are already assigned to this client.\nAdd new materials in the Materials tab first.",
+                font=ctk.CTkFont(size=14)
+            )
+            msg.pack(pady=50)
+            return
+
+        # Material selection
+        material_label = ctk.CTkLabel(dialog, text="Material:", font=ctk.CTkFont(size=14))
+        material_label.pack(pady=(20, 5))
+
+        material_var = tk.StringVar(value=available_materials[0]['name'])
+        material_menu = ctk.CTkOptionMenu(
+            dialog,
+            values=[m['name'] for m in available_materials],
+            variable=material_var,
+            font=ctk.CTkFont(size=13),
+            height=35
+        )
+        material_menu.pack(pady=5, padx=20, fill="x")
+
+        # Custom cost option
+        custom_cost_var = tk.BooleanVar(value=False)
+        custom_check = ctk.CTkCheckBox(
+            dialog,
+            text="Use custom cost for this client",
+            variable=custom_cost_var,
+            font=ctk.CTkFont(size=13)
+        )
+        custom_check.pack(pady=10)
+
+        cost_entry = ctk.CTkEntry(dialog, placeholder_text="Custom cost", height=35)
+        cost_entry.pack(pady=5, padx=20, fill="x")
+        cost_entry.configure(state="disabled")
+
+        def toggle_cost_entry():
+            if custom_cost_var.get():
+                cost_entry.configure(state="normal")
+            else:
+                cost_entry.configure(state="disabled")
+                cost_entry.delete(0, tk.END)
+
+        custom_check.configure(command=toggle_cost_entry)
+
+        def save_material():
+            selected_name = material_var.get()
+            selected_material = next(m for m in available_materials if m['name'] == selected_name)
+
+            custom_cost = None
+            if custom_cost_var.get():
+                try:
+                    custom_cost = float(cost_entry.get())
+                except ValueError:
+                    messagebox.showerror("Error", "Custom cost must be a valid number")
+                    return
+
+            self.db.add_client_material(client_id, selected_material['id'], custom_cost)
+            messagebox.showinfo("Success", "Material added to client!")
+            dialog.destroy()
+            self.show_client_details(client_id)
+
+        save_btn = ctk.CTkButton(
+            dialog,
+            text="Add Material",
+            command=save_material,
+            font=ctk.CTkFont(size=16),
+            height=45,
+            fg_color="green"
+        )
+        save_btn.pack(pady=20, padx=20, fill="x")
+
+    def remove_client_material(self, client_id: int, material_id: int):
+        """Remove a material from a client's configuration."""
+        if messagebox.askyesno("Confirm", "Remove this material from the client?"):
+            self.db.remove_client_material(client_id, material_id)
+            messagebox.showinfo("Success", "Material removed")
+            self.show_client_details(client_id)
+
+    # ==================== VISITS TAB ====================
+
+    def init_visits_tab(self):
+        """Initialize the visits management tab."""
+        self.tab_visits.grid_columnconfigure(0, weight=1)
+        self.tab_visits.grid_rowconfigure(2, weight=1)
+
+        # Header
+        header = ctk.CTkLabel(
+            self.tab_visits,
+            text="Visit Entry & Management",
+            font=ctk.CTkFont(size=20, weight="bold")
+        )
+        header.grid(row=0, column=0, sticky="w", padx=20, pady=20)
+
+        # Client selection
+        client_frame = ctk.CTkFrame(self.tab_visits)
+        client_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 10))
+
+        client_label = ctk.CTkLabel(
+            client_frame,
+            text="Select Client:",
+            font=ctk.CTkFont(size=16)
+        )
+        client_label.pack(side=tk.LEFT, padx=10, pady=15)
+
+        self.visit_client_var = tk.StringVar(value="Select a client...")
+        self.visit_client_menu = ctk.CTkOptionMenu(
+            client_frame,
+            values=["Select a client..."],
+            variable=self.visit_client_var,
+            command=self.on_visit_client_select,
+            font=ctk.CTkFont(size=14),
+            height=40,
+            width=300
+        )
+        self.visit_client_menu.pack(side=tk.LEFT, padx=10, pady=15)
+
+        add_visit_btn = ctk.CTkButton(
+            client_frame,
+            text="+ Add New Visit",
+            command=self.add_new_visit,
+            font=ctk.CTkFont(size=14),
+            height=40
+        )
+        add_visit_btn.pack(side=tk.LEFT, padx=10, pady=15)
+
+        # Visits list
+        self.visits_scroll = ctk.CTkScrollableFrame(self.tab_visits)
+        self.visits_scroll.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        self.visits_scroll.grid_columnconfigure(0, weight=1)
+
+        # Load clients for dropdown
+        self.refresh_visit_client_dropdown()
+
+    def refresh_visit_client_dropdown(self):
+        """Refresh the client dropdown in visits tab."""
+        clients = self.db.get_all_clients(active_only=True)
+        client_names = [c['name'] for c in clients]
+        if not client_names:
+            client_names = ["No active clients"]
+
+        self.visit_client_menu.configure(values=client_names)
+        self.visit_clients_data = {c['name']: c['id'] for c in clients}
+
+    def on_visit_client_select(self, client_name: str):
+        """Handle client selection in visits tab."""
+        if client_name in self.visit_clients_data:
+            client_id = self.visit_clients_data[client_name]
+            self.load_client_visits(client_id)
+
+    def load_client_visits(self, client_id: int):
+        """Load and display all visits for a client."""
+        # Clear existing widgets
+        for widget in self.visits_scroll.winfo_children():
+            widget.destroy()
+
+        visits = self.db.get_client_visits(client_id)
+
+        if not visits:
+            no_visits = ctk.CTkLabel(
+                self.visits_scroll,
+                text="No visits recorded for this client yet.",
+                font=ctk.CTkFont(size=16),
+                text_color="gray"
+            )
+            no_visits.grid(row=0, column=0, pady=50)
+            return
+
+        for idx, visit in enumerate(visits):
+            self.create_visit_card(self.visits_scroll, visit, idx)
+
+    def create_visit_card(self, parent, visit, row):
+        """Create a card displaying visit information."""
+        card = ctk.CTkFrame(parent, border_width=2)
+        card.grid(row=row, column=0, sticky="ew", padx=10, pady=10)
+        card.grid_columnconfigure(1, weight=1)
+
+        # Visit date
+        date_label = ctk.CTkLabel(
+            card,
+            text=f"📅 {visit['visit_date']}",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        date_label.grid(row=0, column=0, sticky="w", padx=15, pady=10)
+
+        # Time info
+        time_text = f"🕐 {visit['start_time']} - {visit['end_time']} ({visit['duration_minutes']:.0f} min)"
+        time_label = ctk.CTkLabel(
+            card,
+            text=time_text,
+            font=ctk.CTkFont(size=14)
+        )
+        time_label.grid(row=1, column=0, sticky="w", padx=15, pady=(0, 10))
+
+        # Materials used
+        materials = self.db.get_visit_materials(visit['id'])
+        if materials:
+            materials_frame = ctk.CTkFrame(card, fg_color="transparent")
+            materials_frame.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 10))
+
+            mat_header = ctk.CTkLabel(
+                materials_frame,
+                text="Materials Used:",
+                font=ctk.CTkFont(size=13, weight="bold")
+            )
+            mat_header.pack(anchor="w", pady=(0, 5))
+
+            total_cost = 0
+            for mat in materials:
+                mat_text = f"  • {mat['name']}: {mat['quantity']} {mat['unit']} @ ${mat['cost_at_time']:.2f}"
+                mat_label = ctk.CTkLabel(
+                    materials_frame,
+                    text=mat_text,
+                    font=ctk.CTkFont(size=12)
+                )
+                mat_label.pack(anchor="w")
+                total_cost += mat['quantity'] * mat['cost_at_time']
+
+            cost_label = ctk.CTkLabel(
+                materials_frame,
+                text=f"Visit Total: ${total_cost:.2f}",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color="green"
+            )
+            cost_label.pack(anchor="w", pady=(5, 0))
+
+        # Notes
+        if visit['notes']:
+            notes_label = ctk.CTkLabel(
+                card,
+                text=f"Notes: {visit['notes']}",
+                font=ctk.CTkFont(size=12),
+                wraplength=500
+            )
+            notes_label.grid(row=3, column=0, sticky="w", padx=15, pady=(0, 10))
+
+        # Delete button
+        delete_btn = ctk.CTkButton(
+            card,
+            text="Delete",
+            command=lambda: self.delete_visit(visit['id']),
+            width=80,
+            height=30,
+            fg_color="red"
+        )
+        delete_btn.grid(row=0, column=1, rowspan=2, padx=15, pady=10, sticky="e")
+
+    def add_new_visit(self):
+        """Open dialog to add a new visit."""
+        client_name = self.visit_client_var.get()
+        if client_name not in self.visit_clients_data:
+            messagebox.showwarning("No Client", "Please select a client first")
+            return
+
+        client_id = self.visit_clients_data[client_name]
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Add New Visit")
+        dialog.geometry("600x700")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (600 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (700 // 2)
+        dialog.geometry(f"600x700+{x}+{y}")
+
+        header = ctk.CTkLabel(
+            dialog,
+            text=f"New Visit for {client_name}",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        header.pack(pady=20)
+
+        # Date
+        date_label = ctk.CTkLabel(dialog, text="Date (YYYY-MM-DD):", font=ctk.CTkFont(size=14))
+        date_label.pack(pady=(10, 5))
+        date_entry = ctk.CTkEntry(dialog, placeholder_text="2024-01-15", height=35)
+        date_entry.insert(0, datetime.now().strftime("%Y-%m-%d"))
+        date_entry.pack(pady=5, padx=20, fill="x")
+
+        # Start time
+        start_label = ctk.CTkLabel(dialog, text="Start Time (HH:MM):", font=ctk.CTkFont(size=14))
+        start_label.pack(pady=(10, 5))
+        start_entry = ctk.CTkEntry(dialog, placeholder_text="09:00", height=35)
+        start_entry.pack(pady=5, padx=20, fill="x")
+
+        # End time
+        end_label = ctk.CTkLabel(dialog, text="End Time (HH:MM):", font=ctk.CTkFont(size=14))
+        end_label.pack(pady=(10, 5))
+        end_entry = ctk.CTkEntry(dialog, placeholder_text="11:30", height=35)
+        end_entry.pack(pady=5, padx=20, fill="x")
+
+        # Duration (calculated)
+        duration_var = tk.StringVar(value="Duration will be calculated")
+        duration_label = ctk.CTkLabel(
+            dialog,
+            textvariable=duration_var,
+            font=ctk.CTkFont(size=13),
+            text_color="gray"
+        )
+        duration_label.pack(pady=5)
+
+        def calculate_duration():
+            try:
+                start = datetime.strptime(start_entry.get(), "%H:%M")
+                end = datetime.strptime(end_entry.get(), "%H:%M")
+                duration = (end - start).total_seconds() / 60
+                if duration < 0:
+                    duration_var.set("End time must be after start time")
+                else:
+                    duration_var.set(f"Duration: {duration:.0f} minutes")
+                    return duration
+            except:
+                duration_var.set("Invalid time format")
+                return None
+
+        start_entry.bind('<KeyRelease>', lambda e: calculate_duration())
+        end_entry.bind('<KeyRelease>', lambda e: calculate_duration())
+
+        # Notes
+        notes_label = ctk.CTkLabel(dialog, text="Notes:", font=ctk.CTkFont(size=14))
+        notes_label.pack(pady=(10, 5))
+        notes_entry = ctk.CTkTextbox(dialog, height=80)
+        notes_entry.pack(pady=5, padx=20, fill="x")
+
+        # Materials section
+        materials_label = ctk.CTkLabel(
+            dialog,
+            text="Materials Used (optional):",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        materials_label.pack(pady=(15, 10))
+
+        # Get client materials
+        client_materials = self.db.get_client_materials(client_id)
+        materials_frame = ctk.CTkScrollableFrame(dialog, height=150)
+        materials_frame.pack(pady=5, padx=20, fill="both", expand=True)
+
+        material_quantities = {}
+        if client_materials:
+            for mat in client_materials:
+                mat_row = ctk.CTkFrame(materials_frame, fg_color="transparent")
+                mat_row.pack(fill="x", pady=5)
+
+                name_lbl = ctk.CTkLabel(
+                    mat_row,
+                    text=f"{mat['name']} (${mat['effective_cost']:.2f}/{mat['unit']})",
+                    font=ctk.CTkFont(size=12)
+                )
+                name_lbl.pack(side=tk.LEFT, padx=5)
+
+                qty_entry = ctk.CTkEntry(mat_row, placeholder_text="Quantity", width=100)
+                qty_entry.pack(side=tk.RIGHT, padx=5)
+                material_quantities[mat['material_id']] = {
+                    'entry': qty_entry,
+                    'cost': mat['effective_cost']
+                }
+        else:
+            no_mat_lbl = ctk.CTkLabel(
+                materials_frame,
+                text="No materials configured for this client",
+                text_color="gray"
+            )
+            no_mat_lbl.pack(pady=20)
+
+        def save_visit():
+            # Validate and save
+            date_str = date_entry.get().strip()
+            start_str = start_entry.get().strip()
+            end_str = end_entry.get().strip()
+            duration = calculate_duration()
+
+            if not all([date_str, start_str, end_str]) or duration is None or duration < 0:
+                messagebox.showerror("Error", "Please fill in valid date and times")
+                return
+
+            # Add visit
+            visit_id = self.db.add_visit(
+                client_id=client_id,
+                visit_date=date_str,
+                start_time=start_str,
+                end_time=end_str,
+                duration_minutes=duration,
+                notes=notes_entry.get("1.0", "end-1c")
+            )
+
+            # Add materials
+            for mat_id, mat_data in material_quantities.items():
+                qty_str = mat_data['entry'].get().strip()
+                if qty_str:
+                    try:
+                        qty = float(qty_str)
+                        if qty > 0:
+                            self.db.add_visit_material(
+                                visit_id=visit_id,
+                                material_id=mat_id,
+                                quantity=qty,
+                                cost_at_time=mat_data['cost']
+                            )
+                    except ValueError:
+                        pass
+
+            messagebox.showinfo("Success", "Visit added successfully!")
+            dialog.destroy()
+            self.load_client_visits(client_id)
+            self.refresh_dashboard()
+
+        save_btn = ctk.CTkButton(
+            dialog,
+            text="Save Visit",
+            command=save_visit,
+            font=ctk.CTkFont(size=16),
+            height=45,
+            fg_color="green"
+        )
+        save_btn.pack(pady=20, padx=20, fill="x")
+
+    def delete_visit(self, visit_id: int):
+        """Delete a visit record."""
+        if messagebox.askyesno("Confirm", "Delete this visit record?"):
+            self.db.delete_visit(visit_id)
+            messagebox.showinfo("Success", "Visit deleted")
+            # Reload current client's visits
+            client_name = self.visit_client_var.get()
+            if client_name in self.visit_clients_data:
+                self.load_client_visits(self.visit_clients_data[client_name])
+            self.refresh_dashboard()
+
+    # ==================== MATERIALS TAB ====================
+
+    def init_materials_tab(self):
+        """Initialize the materials/services management tab."""
+        self.tab_materials.grid_columnconfigure(0, weight=1)
+        self.tab_materials.grid_rowconfigure(2, weight=1)
+
+        # Header
+        header = ctk.CTkLabel(
+            self.tab_materials,
+            text="Materials & Services Catalog",
+            font=ctk.CTkFont(size=20, weight="bold")
+        )
+        header.grid(row=0, column=0, sticky="w", padx=20, pady=20)
+
+        # Description
+        desc = ctk.CTkLabel(
+            self.tab_materials,
+            text="Manage your catalog of materials and services. Global items have default costs,\nwhich can be customized per client in the Clients tab.",
+            font=ctk.CTkFont(size=13),
+            text_color="gray"
+        )
+        desc.grid(row=1, column=0, sticky="w", padx=20, pady=(0, 10))
+
+        # Materials list
+        self.materials_scroll = ctk.CTkScrollableFrame(self.tab_materials)
+        self.materials_scroll.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 10))
+        self.materials_scroll.grid_columnconfigure(0, weight=1)
+
+        # Add button
+        add_btn = ctk.CTkButton(
+            self.tab_materials,
+            text="+ Add New Material/Service",
+            command=self.add_new_material,
+            font=ctk.CTkFont(size=14),
+            height=45
+        )
+        add_btn.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 20))
+
+    def refresh_materials_list(self):
+        """Refresh the materials list display."""
+        # Clear existing widgets
+        for widget in self.materials_scroll.winfo_children():
+            widget.destroy()
+
+        materials = self.db.get_all_materials()
+
+        if not materials:
+            no_mat = ctk.CTkLabel(
+                self.materials_scroll,
+                text="No materials added yet. Click 'Add New Material/Service' to get started.",
+                font=ctk.CTkFont(size=16),
+                text_color="gray"
+            )
+            no_mat.grid(row=0, column=0, pady=50)
+            return
+
+        for idx, mat in enumerate(materials):
+            self.create_material_card(self.materials_scroll, mat, idx)
+
+    def create_material_card(self, parent, material, row):
+        """Create a card for displaying material information."""
+        card = ctk.CTkFrame(parent, border_width=2)
+        card.grid(row=row, column=0, sticky="ew", padx=10, pady=10)
+        card.grid_columnconfigure(1, weight=1)
+
+        # Name
+        name_label = ctk.CTkLabel(
+            card,
+            text=material['name'],
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        name_label.grid(row=0, column=0, sticky="w", padx=15, pady=(15, 5))
+
+        # Cost and unit
+        cost_text = f"${material['default_cost']:.2f}"
+        if material['unit']:
+            cost_text += f" per {material['unit']}"
+
+        if material['is_global']:
+            cost_text += " (Global)"
+        else:
+            cost_text += " (Custom)"
+
+        cost_label = ctk.CTkLabel(
+            card,
+            text=cost_text,
+            font=ctk.CTkFont(size=14)
+        )
+        cost_label.grid(row=1, column=0, sticky="w", padx=15, pady=(0, 5))
+
+        # Description
+        if material['description']:
+            desc_label = ctk.CTkLabel(
+                card,
+                text=material['description'],
+                font=ctk.CTkFont(size=12),
+                text_color="gray",
+                wraplength=500
+            )
+            desc_label.grid(row=2, column=0, sticky="w", padx=15, pady=(0, 15))
+
+        # Edit button
+        edit_btn = ctk.CTkButton(
+            card,
+            text="Edit",
+            command=lambda: self.edit_material(material['id']),
+            width=80,
+            height=30
+        )
+        edit_btn.grid(row=0, column=1, padx=10, pady=10, sticky="ne")
+
+        # Delete button
+        delete_btn = ctk.CTkButton(
+            card,
+            text="Delete",
+            command=lambda: self.delete_material(material['id']),
+            width=80,
+            height=30,
+            fg_color="red"
+        )
+        delete_btn.grid(row=1, column=1, padx=10, pady=10, sticky="ne")
+
+    def add_new_material(self):
+        """Open dialog to add a new material/service."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Add New Material/Service")
+        dialog.geometry("500x550")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (550 // 2)
+        dialog.geometry(f"500x550+{x}+{y}")
+
+        header = ctk.CTkLabel(
+            dialog,
+            text="New Material/Service",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        header.pack(pady=20)
+
+        # Name
+        name_label = ctk.CTkLabel(dialog, text="Name *:", font=ctk.CTkFont(size=14))
+        name_label.pack(pady=(10, 5))
+        name_entry = ctk.CTkEntry(dialog, placeholder_text="e.g., Mulch, Fertilizer", height=35)
+        name_entry.pack(pady=5, padx=20, fill="x")
+
+        # Default cost
+        cost_label = ctk.CTkLabel(dialog, text="Default Cost ($) *:", font=ctk.CTkFont(size=14))
+        cost_label.pack(pady=(10, 5))
+        cost_entry = ctk.CTkEntry(dialog, placeholder_text="0.00", height=35)
+        cost_entry.pack(pady=5, padx=20, fill="x")
+
+        # Unit
+        unit_label = ctk.CTkLabel(dialog, text="Unit:", font=ctk.CTkFont(size=14))
+        unit_label.pack(pady=(10, 5))
+        unit_entry = ctk.CTkEntry(dialog, placeholder_text="e.g., bag, gallon, service", height=35)
+        unit_entry.pack(pady=5, padx=20, fill="x")
+
+        # Is global
+        is_global_var = tk.BooleanVar(value=True)
+        global_check = ctk.CTkCheckBox(
+            dialog,
+            text="Global (same cost for all clients by default)",
+            variable=is_global_var,
+            font=ctk.CTkFont(size=13)
+        )
+        global_check.pack(pady=15)
+
+        # Description
+        desc_label = ctk.CTkLabel(dialog, text="Description:", font=ctk.CTkFont(size=14))
+        desc_label.pack(pady=(10, 5))
+        desc_entry = ctk.CTkTextbox(dialog, height=80)
+        desc_entry.pack(pady=5, padx=20, fill="x")
+
+        def save_material():
+            name = name_entry.get().strip()
+            cost_str = cost_entry.get().strip()
+
+            if not name:
+                messagebox.showerror("Error", "Material name is required")
+                return
+
+            try:
+                cost = float(cost_str) if cost_str else 0.0
+            except ValueError:
+                messagebox.showerror("Error", "Cost must be a valid number")
+                return
+
+            self.db.add_material(
+                name=name,
+                default_cost=cost,
+                unit=unit_entry.get().strip(),
+                is_global=is_global_var.get(),
+                description=desc_entry.get("1.0", "end-1c")
+            )
+
+            messagebox.showinfo("Success", "Material/service added successfully!")
+            dialog.destroy()
+            self.refresh_materials_list()
+
+        save_btn = ctk.CTkButton(
+            dialog,
+            text="Save Material",
+            command=save_material,
+            font=ctk.CTkFont(size=16),
+            height=45,
+            fg_color="green"
+        )
+        save_btn.pack(pady=20, padx=20, fill="x")
+
+    def edit_material(self, material_id: int):
+        """Open dialog to edit a material/service."""
+        material = None
+        for m in self.db.get_all_materials():
+            if m['id'] == material_id:
+                material = m
+                break
+
+        if not material:
+            return
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Edit Material/Service")
+        dialog.geometry("500x550")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (550 // 2)
+        dialog.geometry(f"500x550+{x}+{y}")
+
+        header = ctk.CTkLabel(
+            dialog,
+            text="Edit Material/Service",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        header.pack(pady=20)
+
+        # Name
+        name_label = ctk.CTkLabel(dialog, text="Name *:", font=ctk.CTkFont(size=14))
+        name_label.pack(pady=(10, 5))
+        name_entry = ctk.CTkEntry(dialog, height=35)
+        name_entry.insert(0, material['name'])
+        name_entry.pack(pady=5, padx=20, fill="x")
+
+        # Default cost
+        cost_label = ctk.CTkLabel(dialog, text="Default Cost ($) *:", font=ctk.CTkFont(size=14))
+        cost_label.pack(pady=(10, 5))
+        cost_entry = ctk.CTkEntry(dialog, height=35)
+        cost_entry.insert(0, str(material['default_cost']))
+        cost_entry.pack(pady=5, padx=20, fill="x")
+
+        # Unit
+        unit_label = ctk.CTkLabel(dialog, text="Unit:", font=ctk.CTkFont(size=14))
+        unit_label.pack(pady=(10, 5))
+        unit_entry = ctk.CTkEntry(dialog, height=35)
+        unit_entry.insert(0, material['unit'] or "")
+        unit_entry.pack(pady=5, padx=20, fill="x")
+
+        # Is global
+        is_global_var = tk.BooleanVar(value=bool(material['is_global']))
+        global_check = ctk.CTkCheckBox(
+            dialog,
+            text="Global (same cost for all clients by default)",
+            variable=is_global_var,
+            font=ctk.CTkFont(size=13)
+        )
+        global_check.pack(pady=15)
+
+        # Description
+        desc_label = ctk.CTkLabel(dialog, text="Description:", font=ctk.CTkFont(size=14))
+        desc_label.pack(pady=(10, 5))
+        desc_entry = ctk.CTkTextbox(dialog, height=80)
+        desc_entry.insert("1.0", material['description'] or "")
+        desc_entry.pack(pady=5, padx=20, fill="x")
+
+        def save_changes():
+            name = name_entry.get().strip()
+            cost_str = cost_entry.get().strip()
+
+            if not name:
+                messagebox.showerror("Error", "Material name is required")
+                return
+
+            try:
+                cost = float(cost_str)
+            except ValueError:
+                messagebox.showerror("Error", "Cost must be a valid number")
+                return
+
+            self.db.update_material(
+                material_id,
+                name=name,
+                default_cost=cost,
+                unit=unit_entry.get().strip(),
+                is_global=1 if is_global_var.get() else 0,
+                description=desc_entry.get("1.0", "end-1c")
+            )
+
+            messagebox.showinfo("Success", "Material/service updated successfully!")
+            dialog.destroy()
+            self.refresh_materials_list()
+
+        save_btn = ctk.CTkButton(
+            dialog,
+            text="Save Changes",
+            command=save_changes,
+            font=ctk.CTkFont(size=16),
+            height=45,
+            fg_color="green"
+        )
+        save_btn.pack(pady=20, padx=20, fill="x")
+
+    def delete_material(self, material_id: int):
+        """Delete a material/service."""
+        if messagebox.askyesno("Confirm Delete", "Delete this material/service from the catalog?"):
+            try:
+                self.db.delete_material(material_id)
+                messagebox.showinfo("Success", "Material deleted")
+                self.refresh_materials_list()
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not delete material: {str(e)}")
+
+    # ==================== IMPORT TAB ====================
+
+    def init_import_tab(self):
+        """Initialize the data import tab."""
+        self.tab_import.grid_columnconfigure(0, weight=1)
+
+        header = ctk.CTkLabel(
+            self.tab_import,
+            text="Import Historical Data",
+            font=ctk.CTkFont(size=20, weight="bold")
+        )
+        header.grid(row=0, column=0, sticky="w", padx=20, pady=20)
+
+        desc = ctk.CTkLabel(
+            self.tab_import,
+            text="Import client and visit data from Excel files.\nComing soon: OCR scanning from paper records.",
+            font=ctk.CTkFont(size=14),
+            text_color="gray"
+        )
+        desc.grid(row=1, column=0, sticky="w", padx=20, pady=(0, 20))
+
+        excel_btn = ctk.CTkButton(
+            self.tab_import,
+            text="📄 Import from Excel",
+            command=self.import_from_excel,
+            font=ctk.CTkFont(size=16),
+            height=50
+        )
+        excel_btn.grid(row=2, column=0, sticky="ew", padx=50, pady=10)
+
+        template_btn = ctk.CTkButton(
+            self.tab_import,
+            text="📝 Download Excel Template",
+            command=self.download_excel_template,
+            font=ctk.CTkFont(size=16),
+            height=50,
+            fg_color="gray"
+        )
+        template_btn.grid(row=3, column=0, sticky="ew", padx=50, pady=10)
+
+        ocr_state = "normal" if self.ocr_scanner.is_available() else "disabled"
+        ocr_text = "📷 Scan Paper Records" if self.ocr_scanner.is_available() else "📷 Scan Paper Records (Install pytesseract)"
+
+        ocr_btn = ctk.CTkButton(
+            self.tab_import,
+            text=ocr_text,
+            command=self.scan_paper_records,
+            font=ctk.CTkFont(size=16),
+            height=50,
+            state=ocr_state
+        )
+        ocr_btn.grid(row=4, column=0, sticky="ew", padx=50, pady=10)
+
+        instructions = ctk.CTkTextbox(self.tab_import, height=300)
+        instructions.grid(row=5, column=0, sticky="ew", padx=20, pady=20)
+        instructions.insert("1.0", """
+Excel Import Instructions (To be implemented):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Prepare your Excel file with the following columns:
+
+For Clients Sheet:
+- Name (required)
+- Email
+- Phone
+- Address
+- Monthly Charge (required)
+- Notes
+
+For Visits Sheet:
+- Client Name (must match a client)
+- Date (YYYY-MM-DD)
+- Start Time (HH:MM)
+- End Time (HH:MM)
+- Notes
+
+OCR Scanning Instructions (To be implemented):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Take clear photos of your paper records
+2. Upload images through the scanner
+3. Review and correct any OCR errors
+4. Save verified data to the database
+        """)
+        instructions.configure(state="disabled")
+
+    def download_excel_template(self):
+        """Generate and download an Excel template."""
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel files", "*.xlsx")],
+            initialfile="landscaping_template.xlsx"
+        )
+
+        if file_path:
+            if self.excel_importer.generate_template(file_path):
+                messagebox.showinfo(
+                    "Success",
+                    f"Template saved to:\n{file_path}\n\nFill in your data and use 'Import from Excel' to load it."
+                )
+            else:
+                messagebox.showerror("Error", "Failed to generate template")
+
+    def import_from_excel(self):
+        """Import data from Excel file."""
+        file_path = filedialog.askopenfilename(
+            title="Select Excel file to import",
+            filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
+        )
+
+        if not file_path:
+            return
+
+        # Show progress message
+        progress_msg = messagebox.showinfo("Importing", "Importing data from Excel...\nThis may take a moment.")
+
+        # Perform import
+        results = self.excel_importer.import_from_file(file_path)
+
+        if not results['success']:
+            messagebox.showerror("Import Failed", results.get('error', 'Unknown error'))
+            return
+
+        # Build results message
+        msg = "Import Complete!\n\n"
+        msg += f"Clients added: {results['clients_added']}\n"
+        msg += f"Clients updated: {results['clients_updated']}\n"
+        msg += f"Materials added: {results['materials_added']}\n"
+        msg += f"Visits added: {results['visits_added']}\n"
+
+        if results['warnings']:
+            msg += f"\nWarnings ({len(results['warnings'])}):\n"
+            for warning in results['warnings'][:5]:  # Show first 5
+                msg += f"  • {warning}\n"
+            if len(results['warnings']) > 5:
+                msg += f"  ... and {len(results['warnings']) - 5} more\n"
+
+        if results['errors']:
+            msg += f"\nErrors ({len(results['errors'])}):\n"
+            for error in results['errors'][:5]:  # Show first 5
+                msg += f"  • {error}\n"
+            if len(results['errors']) > 5:
+                msg += f"  ... and {len(results['errors']) - 5} more\n"
+
+        messagebox.showinfo("Import Results", msg)
+
+        # Refresh all views
+        self.refresh_all()
+
+    def scan_paper_records(self):
+        """Scan and import data from paper records."""
+        if not self.ocr_scanner.is_available():
+            messagebox.showerror(
+                "OCR Not Available",
+                "OCR functionality requires pytesseract and tesseract-ocr to be installed.\n\n"
+                "Please install:\n"
+                "1. tesseract-ocr system package\n"
+                "2. pytesseract Python package (pip install pytesseract)"
+            )
+            return
+
+        file_paths = filedialog.askopenfilenames(
+            title="Select images of paper records",
+            filetypes=[
+                ("Image files", "*.png *.jpg *.jpeg *.tiff *.bmp"),
+                ("All files", "*.*")
+            ]
+        )
+
+        if not file_paths:
+            return
+
+        all_records = []
+
+        # Scan all images
+        for file_path in file_paths:
+            text = self.ocr_scanner.scan_image(file_path)
+            if text:
+                records = self.ocr_scanner.parse_visit_records(text)
+                for record in records:
+                    record['source_file'] = file_path
+                    self.ocr_scanner.validate_and_calculate_duration(record)
+                all_records.extend(records)
+
+        if not all_records:
+            messagebox.showwarning(
+                "No Records Found",
+                "Could not extract any visit records from the scanned images.\n\n"
+                "Please ensure the images are clear and contain visit information with dates and times."
+            )
+            return
+
+        # Show verification dialog
+        self.show_ocr_verification_dialog(all_records)
+
+    def show_ocr_verification_dialog(self, records: list):
+        """Show dialog for verifying and editing OCR-scanned records before import."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Verify Scanned Records")
+        dialog.geometry("900x700")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (900 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (700 // 2)
+        dialog.geometry(f"900x700+{x}+{y}")
+
+        header = ctk.CTkLabel(
+            dialog,
+            text=f"Found {len(records)} Records - Review and Edit Before Saving",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        header.pack(pady=20)
+
+        # Scrollable frame for records
+        scroll_frame = ctk.CTkScrollableFrame(dialog, height=500)
+        scroll_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+
+        # Get all clients for dropdown
+        all_clients = self.db.get_all_clients(active_only=True)
+        client_names = [c['name'] for c in all_clients]
+
+        record_widgets = []
+
+        for idx, record in enumerate(records):
+            # Frame for each record
+            record_frame = ctk.CTkFrame(scroll_frame, border_width=2)
+            record_frame.pack(fill="x", padx=10, pady=10)
+            record_frame.grid_columnconfigure(1, weight=1)
+
+            # Status indicator
+            is_valid = record.get('is_valid', True)
+            status_color = "green" if is_valid else "red"
+            status_text = "✓ Valid" if is_valid else "⚠ Needs Review"
+
+            status_label = ctk.CTkLabel(
+                record_frame,
+                text=status_text,
+                text_color=status_color,
+                font=ctk.CTkFont(size=12, weight="bold")
+            )
+            status_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 5))
+
+            # Input fields
+            row_num = 1
+
+            # Client selection
+            client_label = ctk.CTkLabel(record_frame, text="Client:", font=ctk.CTkFont(size=13))
+            client_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
+
+            client_var = tk.StringVar(value=record.get('client_name', 'Select...'))
+            client_menu = ctk.CTkOptionMenu(
+                record_frame,
+                values=client_names if client_names else ["No clients available"],
+                variable=client_var,
+                width=200
+            )
+            client_menu.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
+            row_num += 1
+
+            # Date
+            date_label = ctk.CTkLabel(record_frame, text="Date:", font=ctk.CTkFont(size=13))
+            date_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
+
+            date_entry = ctk.CTkEntry(record_frame, width=200)
+            date_entry.insert(0, record.get('date', ''))
+            date_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
+            row_num += 1
+
+            # Start time
+            start_label = ctk.CTkLabel(record_frame, text="Start Time:", font=ctk.CTkFont(size=13))
+            start_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
+
+            start_entry = ctk.CTkEntry(record_frame, width=200)
+            start_entry.insert(0, record.get('start_time', ''))
+            start_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
+            row_num += 1
+
+            # End time
+            end_label = ctk.CTkLabel(record_frame, text="End Time:", font=ctk.CTkFont(size=13))
+            end_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
+
+            end_entry = ctk.CTkEntry(record_frame, width=200)
+            end_entry.insert(0, record.get('end_time', ''))
+            end_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
+            row_num += 1
+
+            # Source file
+            source_label = ctk.CTkLabel(
+                record_frame,
+                text=f"Source: {record.get('source_file', 'Unknown')}",
+                font=ctk.CTkFont(size=10),
+                text_color="gray"
+            )
+            source_label.grid(row=row_num, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
+
+            # Store widgets for later access
+            record_widgets.append({
+                'client_var': client_var,
+                'date_entry': date_entry,
+                'start_entry': start_entry,
+                'end_entry': end_entry,
+                'clients_map': {c['name']: c['id'] for c in all_clients}
+            })
+
+        def save_all_records():
+            saved_count = 0
+            errors = []
+
+            for idx, widgets in enumerate(record_widgets):
+                try:
+                    client_name = widgets['client_var'].get()
+                    client_id = widgets['clients_map'].get(client_name)
+
+                    if not client_id:
+                        errors.append(f"Record {idx+1}: Invalid client")
+                        continue
+
+                    date_str = widgets['date_entry'].get().strip()
+                    start_str = widgets['start_entry'].get().strip()
+                    end_str = widgets['end_entry'].get().strip()
+
+                    # Calculate duration
+                    start = datetime.strptime(start_str, '%H:%M')
+                    end = datetime.strptime(end_str, '%H:%M')
+                    duration = (end - start).total_seconds() / 60
+
+                    if duration <= 0:
+                        errors.append(f"Record {idx+1}: Invalid time range")
+                        continue
+
+                    self.db.add_visit(
+                        client_id=client_id,
+                        visit_date=date_str,
+                        start_time=start_str,
+                        end_time=end_str,
+                        duration_minutes=duration,
+                        notes="Imported from OCR scan"
+                    )
+                    saved_count += 1
+
+                except Exception as e:
+                    errors.append(f"Record {idx+1}: {str(e)}")
+
+            msg = f"Successfully saved {saved_count} out of {len(record_widgets)} records."
+            if errors:
+                msg += f"\n\nErrors:\n" + "\n".join(errors[:5])
+                if len(errors) > 5:
+                    msg += f"\n... and {len(errors) - 5} more errors"
+
+            messagebox.showinfo("Import Complete", msg)
+            dialog.destroy()
+            self.refresh_all()
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=(0, 20))
+
+        save_btn = ctk.CTkButton(
+            btn_frame,
+            text="Save All Records",
+            command=save_all_records,
+            font=ctk.CTkFont(size=16),
+            height=45,
+            fg_color="green"
+        )
+        save_btn.pack(side=tk.LEFT, padx=5)
+
+        cancel_btn = ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            font=ctk.CTkFont(size=16),
+            height=45,
+            fg_color="red"
+        )
+        cancel_btn.pack(side=tk.LEFT, padx=5)
+
+    # ==================== UTILITY METHODS ====================
+
+    def refresh_all(self):
+        """Refresh all data displays."""
+        self.refresh_dashboard()
+        self.refresh_clients_list()
+        self.refresh_materials_list()
+        self.refresh_visit_client_dropdown()
+        messagebox.showinfo("Refreshed", "All data refreshed successfully!")
+
+    def on_closing(self):
+        """Handle application closing."""
+        self.db.close()
+        self.destroy()
+
+
+if __name__ == "__main__":
+    app = LandscapingApp()
+    app.protocol("WM_DELETE_WINDOW", app.on_closing)
+    app.mainloop()
