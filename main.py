@@ -1522,38 +1522,221 @@ OCR Scanning Instructions (To be implemented):
         if not file_path:
             return
 
-        # Show progress message
-        progress_msg = messagebox.showinfo("Importing", "Importing data from Excel...\nThis may take a moment.")
+        # First, preview and validate the data
+        preview_results = self.excel_importer.preview_import(file_path)
 
-        # Perform import
-        results = self.excel_importer.import_from_file(file_path)
-
-        if not results['success']:
-            messagebox.showerror("Import Failed", results.get('error', 'Unknown error'))
+        if not preview_results['success']:
+            messagebox.showerror("Import Failed", preview_results.get('error', 'Unknown error'))
             return
+
+        # If there are errors or warnings, show review dialog
+        if preview_results.get('errors') or preview_results.get('warnings'):
+            # Show review dialog for user to fix issues
+            self.show_excel_review_dialog(file_path, preview_results)
+        else:
+            # No errors, proceed with import directly
+            if messagebox.askyesno(
+                "Confirm Import",
+                f"Ready to import:\n"
+                f"• {len(preview_results.get('clients', []))} clients\n"
+                f"• {len(preview_results.get('visits', []))} visits\n\n"
+                f"Proceed with import?"
+            ):
+                self.perform_excel_import(preview_results)
+
+    def show_excel_review_dialog(self, file_path: str, preview_results: dict):
+        """Show dialog for reviewing and fixing Excel import issues."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Review Excel Import - Fix Errors")
+        dialog.geometry("1000x700")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (1000 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (700 // 2)
+        dialog.geometry(f"1000x700+{x}+{y}")
+
+        error_count = len(preview_results.get('errors', []))
+        warning_count = len(preview_results.get('warnings', []))
+
+        header = ctk.CTkLabel(
+            dialog,
+            text=f"Review Import Data - {error_count} Errors, {warning_count} Warnings",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color="red" if error_count > 0 else "orange"
+        )
+        header.pack(pady=20)
+
+        # Instructions
+        instructions = ctk.CTkLabel(
+            dialog,
+            text="Please review and fix any errors below. Rows with errors will not be imported.",
+            font=ctk.CTkFont(size=13),
+            text_color="gray"
+        )
+        instructions.pack(pady=(0, 10))
+
+        # Tabview for Errors/Warnings and Data Preview
+        tabview = ctk.CTkTabview(dialog, height=500)
+        tabview.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+
+        tab_errors = tabview.add("Errors & Warnings")
+        tab_clients = tabview.add(f"Clients ({len(preview_results.get('clients', []))})")
+        tab_visits = tabview.add(f"Visits ({len(preview_results.get('visits', []))})")
+
+        # Errors and Warnings tab
+        errors_scroll = ctk.CTkScrollableFrame(tab_errors)
+        errors_scroll.pack(fill="both", expand=True, padx=10, pady=10)
+
+        if preview_results.get('errors'):
+            errors_header = ctk.CTkLabel(
+                errors_scroll,
+                text="❌ ERRORS (must be fixed):",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color="red"
+            )
+            errors_header.pack(anchor="w", pady=(0, 10))
+
+            for error in preview_results['errors']:
+                error_label = ctk.CTkLabel(
+                    errors_scroll,
+                    text=f"• {error}",
+                    font=ctk.CTkFont(size=12),
+                    text_color="red",
+                    wraplength=900,
+                    anchor="w"
+                )
+                error_label.pack(anchor="w", pady=2, padx=20)
+
+        if preview_results.get('warnings'):
+            warnings_header = ctk.CTkLabel(
+                errors_scroll,
+                text="\n⚠ WARNINGS (may continue with caution):",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color="orange"
+            )
+            warnings_header.pack(anchor="w", pady=(20, 10))
+
+            for warning in preview_results['warnings']:
+                warning_label = ctk.CTkLabel(
+                    errors_scroll,
+                    text=f"• {warning}",
+                    font=ctk.CTkFont(size=12),
+                    text_color="orange",
+                    wraplength=900,
+                    anchor="w"
+                )
+                warning_label.pack(anchor="w", pady=2, padx=20)
+
+        # Clients preview tab
+        clients_scroll = ctk.CTkScrollableFrame(tab_clients)
+        clients_scroll.pack(fill="both", expand=True, padx=10, pady=10)
+
+        for idx, client in enumerate(preview_results.get('clients', [])):
+            client_frame = ctk.CTkFrame(clients_scroll)
+            client_frame.pack(fill="x", pady=5)
+
+            client_text = f"{idx+1}. {client['name']}"
+            if client.get('monthly_charge') is not None:
+                client_text += f" - ${client['monthly_charge']:.2f}/month"
+            else:
+                client_text += " - $0.00/month (will need to update)"
+
+            client_label = ctk.CTkLabel(
+                client_frame,
+                text=client_text,
+                font=ctk.CTkFont(size=12)
+            )
+            client_label.pack(anchor="w", padx=10, pady=5)
+
+        # Visits preview tab
+        visits_scroll = ctk.CTkScrollableFrame(tab_visits)
+        visits_scroll.pack(fill="both", expand=True, padx=10, pady=10)
+
+        for idx, visit in enumerate(preview_results.get('visits', [])):
+            visit_frame = ctk.CTkFrame(visits_scroll)
+            visit_frame.pack(fill="x", pady=3)
+
+            has_error = visit.get('has_error', False)
+            fg_color = "darkred" if has_error else None
+
+            visit_text = f"{idx+1}. {visit['client_name']} - {visit['date']} {visit['start_time']}-{visit['end_time']}"
+            if has_error:
+                visit_text += f" ❌ ERROR: {visit.get('error_msg', 'Unknown error')}"
+
+            visit_label = ctk.CTkLabel(
+                visit_frame,
+                text=visit_text,
+                font=ctk.CTkFont(size=11),
+                text_color="red" if has_error else None
+            )
+            visit_label.pack(anchor="w", padx=10, pady=3)
+
+        # Action message
+        action_text = "Fix errors in your Excel file and re-import, or continue to import valid data only."
+        if not error_count:
+            action_text = "No critical errors found. You may proceed with import."
+
+        action_label = ctk.CTkLabel(
+            dialog,
+            text=action_text,
+            font=ctk.CTkFont(size=13),
+            text_color="green" if not error_count else "orange"
+        )
+        action_label.pack(pady=(0, 10))
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=(0, 20))
+
+        if not error_count or warning_count > 0:
+            # Allow import if no errors (even if warnings exist)
+            proceed_btn = ctk.CTkButton(
+                btn_frame,
+                text=f"Import Valid Data ({len([v for v in preview_results.get('visits', []) if not v.get('has_error')])} visits)",
+                command=lambda: self.confirm_and_import(dialog, preview_results),
+                font=ctk.CTkFont(size=16),
+                height=45,
+                fg_color="green"
+            )
+            proceed_btn.pack(side=tk.LEFT, padx=5)
+
+        cancel_btn = ctk.CTkButton(
+            btn_frame,
+            text="Cancel and Fix Excel File",
+            command=dialog.destroy,
+            font=ctk.CTkFont(size=16),
+            height=45,
+            fg_color="gray"
+        )
+        cancel_btn.pack(side=tk.LEFT, padx=5)
+
+    def confirm_and_import(self, dialog, preview_results):
+        """Confirm and perform the actual import."""
+        valid_visits = [v for v in preview_results.get('visits', []) if not v.get('has_error')]
+
+        if messagebox.askyesno(
+            "Confirm Import",
+            f"This will import:\n"
+            f"• {len(preview_results.get('clients', []))} clients\n"
+            f"• {len(valid_visits)} visits (skipping {len(preview_results.get('visits', [])) - len(valid_visits)} with errors)\n\n"
+            f"Continue?"
+        ):
+            dialog.destroy()
+            self.perform_excel_import(preview_results)
+
+    def perform_excel_import(self, preview_results):
+        """Actually perform the import to the database."""
+        results = self.excel_importer.execute_import(preview_results)
 
         # Build results message
         msg = "Import Complete!\n\n"
         msg += f"Clients added: {results['clients_added']}\n"
-        msg += f"Clients updated: {results['clients_updated']}\n"
-        msg += f"Materials added: {results['materials_added']}\n"
         msg += f"Visits added: {results['visits_added']}\n"
 
-        if results['warnings']:
-            msg += f"\nWarnings ({len(results['warnings'])}):\n"
-            for warning in results['warnings'][:5]:  # Show first 5
-                msg += f"  • {warning}\n"
-            if len(results['warnings']) > 5:
-                msg += f"  ... and {len(results['warnings']) - 5} more\n"
-
-        if results['errors']:
-            msg += f"\nErrors ({len(results['errors'])}):\n"
-            for error in results['errors'][:5]:  # Show first 5
-                msg += f"  • {error}\n"
-            if len(results['errors']) > 5:
-                msg += f"  ... and {len(results['errors']) - 5} more\n"
-
-        messagebox.showinfo("Import Results", msg)
+        messagebox.showinfo("Import Complete", msg)
 
         # Refresh all views
         self.refresh_all()
