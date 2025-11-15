@@ -12,6 +12,128 @@ class ExcelImporter:
         """Initialize with database instance."""
         self.db = database
 
+    def preview_import(self, file_path: str) -> Dict:
+        """
+        Preview and validate Excel import without writing to database.
+
+        Args:
+            file_path: Path to the Excel file
+
+        Returns:
+            Dictionary with preview data, errors, and warnings
+        """
+        if not os.path.exists(file_path):
+            return {'success': False, 'error': 'File not found'}
+
+        results = {
+            'success': True,
+            'clients': [],
+            'visits': [],
+            'errors': [],
+            'warnings': []
+        }
+
+        try:
+            # Read all sheets from the Excel file
+            excel_file = pd.ExcelFile(file_path)
+
+            # Check if this is the standard format or weekly schedule format
+            has_standard_sheets = ('Clients' in excel_file.sheet_names or
+                                 'Materials' in excel_file.sheet_names or
+                                 'Visits' in excel_file.sheet_names)
+
+            if not has_standard_sheets:
+                # Preview weekly schedule format
+                schedule_results = self._preview_weekly_schedule(file_path)
+                results['clients'] = schedule_results['clients']
+                results['visits'] = schedule_results['visits']
+                results['errors'].extend(schedule_results['errors'])
+                results['warnings'].extend(schedule_results['warnings'])
+            else:
+                results['warnings'].append("Standard format sheets detected - weekly schedule preview not implemented yet")
+
+        except Exception as e:
+            results['success'] = False
+            results['error'] = f"Failed to read Excel file: {str(e)}"
+
+        return results
+
+    def execute_import(self, preview_results: Dict) -> Dict:
+        """
+        Execute the actual import to database using previewed data.
+
+        Args:
+            preview_results: Results from preview_import
+
+        Returns:
+            Dictionary with import results
+        """
+        results = {
+            'clients_added': 0,
+            'visits_added': 0,
+            'errors': [],
+        }
+
+        try:
+            # Use a transaction for batch import (much faster)
+            cursor = self.db.connection.cursor()
+
+            # Get all existing clients
+            existing_clients = self.db.get_all_clients(active_only=False)
+            client_map = {c['name'].lower(): c['id'] for c in existing_clients}
+
+            # Import clients first
+            for client_data in preview_results.get('clients', []):
+                client_name_lower = client_data['name'].lower()
+                if client_name_lower not in client_map:
+                    cursor.execute("""
+                        INSERT INTO clients (name, email, phone, address, monthly_charge, notes)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        client_data['name'],
+                        client_data.get('email', ''),
+                        client_data.get('phone', ''),
+                        client_data.get('address', ''),
+                        client_data.get('monthly_charge', 0.0),
+                        client_data.get('notes', '')
+                    ))
+                    client_map[client_name_lower] = cursor.lastrowid
+                    results['clients_added'] += 1
+
+            # Batch insert visits for better performance
+            visit_batch = []
+            for visit_data in preview_results.get('visits', []):
+                if visit_data.get('has_error'):
+                    continue  # Skip visits with errors
+
+                client_id = client_map.get(visit_data['client_name'].lower())
+                if client_id:
+                    visit_batch.append((
+                        client_id,
+                        visit_data['date'],
+                        visit_data['start_time'],
+                        visit_data['end_time'],
+                        visit_data['duration_minutes'],
+                        visit_data.get('notes', '')
+                    ))
+
+            # Batch insert all visits at once
+            if visit_batch:
+                cursor.executemany("""
+                    INSERT INTO visits (client_id, visit_date, start_time, end_time, duration_minutes, notes)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, visit_batch)
+                results['visits_added'] = len(visit_batch)
+
+            # Commit the transaction
+            self.db.connection.commit()
+
+        except Exception as e:
+            self.db.connection.rollback()
+            results['errors'].append(f"Import failed: {str(e)}")
+
+        return results
+
     def import_from_file(self, file_path: str) -> Dict[str, any]:
         """
         Import data from an Excel file.
@@ -76,6 +198,143 @@ class ExcelImporter:
         except Exception as e:
             results['success'] = False
             results['error'] = f"Failed to read Excel file: {str(e)}"
+
+        return results
+
+    def _preview_weekly_schedule(self, file_path: str) -> Dict:
+        """
+        Preview weekly schedule format without importing to database.
+
+        Args:
+            file_path: Path to the Excel file
+
+        Returns:
+            Dictionary with clients list, visits list, errors, and warnings
+        """
+        results = {
+            'clients': [],
+            'visits': [],
+            'errors': [],
+            'warnings': []
+        }
+
+        try:
+            # Read the first sheet
+            df = pd.read_excel(file_path, header=None)
+
+            # Skip header rows
+            data_start = 2
+
+            # Track unique clients
+            clients_dict = {}
+
+            # Process each row (each row is a client)
+            for row_idx in range(data_start, len(df)):
+                try:
+                    row = df.iloc[row_idx]
+
+                    # First column is the client name
+                    if pd.isna(row.iloc[0]):
+                        continue  # Skip empty rows
+
+                    client_name = str(row.iloc[0]).strip()
+
+                    # Add client to list if not already there
+                    if client_name.lower() not in clients_dict:
+                        clients_dict[client_name.lower()] = {
+                            'name': client_name,
+                            'monthly_charge': 0.0,
+                            'notes': 'Imported from Excel schedule'
+                        }
+
+                    # Process each week's data (columns 1-4, 5-8, 9-12, 13-16, etc.)
+                    col_idx = 1
+                    week_num = 1
+
+                    while col_idx + 3 < len(row):
+                        try:
+                            fecha = row.iloc[col_idx]      # Date
+                            inicio = row.iloc[col_idx + 1]  # Start time
+                            fin = row.iloc[col_idx + 2]     # End time
+
+                            # Skip if date is empty
+                            if pd.isna(fecha):
+                                col_idx += 4
+                                week_num += 1
+                                continue
+
+                            visit_data = {
+                                'client_name': client_name,
+                                'has_error': False,
+                                'error_msg': '',
+                                'notes': f'Imported from Excel (Week {week_num})'
+                            }
+
+                            # Parse date
+                            try:
+                                if isinstance(fecha, pd.Timestamp):
+                                    visit_data['date'] = fecha.strftime('%Y-%m-%d')
+                                else:
+                                    date_obj = pd.to_datetime(fecha)
+                                    visit_data['date'] = date_obj.strftime('%Y-%m-%d')
+                            except:
+                                visit_data['has_error'] = True
+                                visit_data['error_msg'] = f"Invalid date '{fecha}'"
+                                visit_data['date'] = str(fecha)
+                                results['errors'].append(
+                                    f"Row {row_idx+1} ({client_name}), Week {week_num}: Invalid date '{fecha}'"
+                                )
+
+                            # Parse times
+                            try:
+                                start_time_str = self._parse_time(inicio)
+                                end_time_str = self._parse_time(fin)
+                                visit_data['start_time'] = start_time_str
+                                visit_data['end_time'] = end_time_str
+
+                                # Calculate duration
+                                start = datetime.strptime(start_time_str, '%H:%M')
+                                end = datetime.strptime(end_time_str, '%H:%M')
+                                duration_minutes = (end - start).total_seconds() / 60
+
+                                if duration_minutes <= 0:
+                                    visit_data['has_error'] = True
+                                    visit_data['error_msg'] = "End time before start time"
+                                    visit_data['duration_minutes'] = 0
+                                    results['errors'].append(
+                                        f"Row {row_idx+1} ({client_name}), Week {week_num}: End time before start time"
+                                    )
+                                else:
+                                    visit_data['duration_minutes'] = duration_minutes
+
+                            except Exception as e:
+                                visit_data['has_error'] = True
+                                visit_data['error_msg'] = f"Invalid time: {str(e)}"
+                                visit_data['start_time'] = str(inicio)
+                                visit_data['end_time'] = str(fin)
+                                visit_data['duration_minutes'] = 0
+                                results['warnings'].append(
+                                    f"Row {row_idx+1} ({client_name}), Week {week_num}: Invalid time - {str(e)}"
+                                )
+
+                            results['visits'].append(visit_data)
+
+                        except Exception as e:
+                            results['warnings'].append(
+                                f"Row {row_idx+1} ({client_name}), Week {week_num}: {str(e)}"
+                            )
+
+                        col_idx += 4
+                        week_num += 1
+
+                except Exception as e:
+                    results['errors'].append(f"Row {row_idx+1}: {str(e)}")
+
+            # Convert clients dict to list
+            results['clients'] = list(clients_dict.values())
+
+        except Exception as e:
+            results['errors'].append(f"Failed to preview weekly schedule: {str(e)}")
 
         return results
 
