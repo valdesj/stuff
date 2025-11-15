@@ -1589,173 +1589,118 @@ OCR Scanning Instructions (To be implemented):
         y = (dialog.winfo_screenheight() // 2) - (700 // 2)
         dialog.geometry(f"1000x700+{x}+{y}")
 
-        error_count = len(preview_results.get('errors', []))
-        warning_count = len(preview_results.get('warnings', []))
+        # Separate visits into error and valid groups
+        visits_with_errors = [v for v in preview_results.get('visits', []) if v.get('has_error')]
+        visits_without_errors = [v for v in preview_results.get('visits', []) if not v.get('has_error')]
 
+        error_count = len(visits_with_errors)
+        total_visits = len(preview_results.get('visits', []))
+
+        # Header with summary
         header = ctk.CTkLabel(
             dialog,
-            text=f"Review Import Data - {error_count} Errors, {warning_count} Warnings",
+            text=f"Found {error_count} visits with errors out of {total_visits} total",
             font=ctk.CTkFont(size=18, weight="bold"),
-            text_color="red" if error_count > 0 else "orange"
+            text_color="red" if error_count > 0 else "green"
         )
         header.pack(pady=20)
 
-        # Instructions
-        instructions = ctk.CTkLabel(
-            dialog,
-            text="Review data below. Edit dates and times directly in the Visits tab to fix errors.",
-            font=ctk.CTkFont(size=13),
-            text_color="gray"
+        # Summary of import
+        summary_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        summary_frame.pack(pady=(0, 10))
+
+        summary_text = (
+            f"Ready to import:\n"
+            f"• {len(preview_results.get('clients', []))} clients\n"
+            f"• {len(visits_without_errors)} valid visits\n"
+            f"• {error_count} visits need review (shown below)"
         )
-        instructions.pack(pady=(0, 10))
 
-        # Tabview for Errors/Warnings and Data Preview
-        tabview = ctk.CTkTabview(dialog, height=500)
-        tabview.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        summary_label = ctk.CTkLabel(
+            summary_frame,
+            text=summary_text,
+            font=ctk.CTkFont(size=14),
+            justify="left"
+        )
+        summary_label.pack()
 
-        tab_errors = tabview.add("Errors & Warnings")
-        tab_clients = tabview.add(f"Clients ({len(preview_results.get('clients', []))})")
-        tab_visits = tabview.add(f"Visits ({len(preview_results.get('visits', []))})")
-
-        # Errors and Warnings tab
-        errors_scroll = ctk.CTkScrollableFrame(tab_errors)
-        errors_scroll.pack(fill="both", expand=True, padx=10, pady=10)
-
-        if preview_results.get('errors'):
-            errors_header = ctk.CTkLabel(
-                errors_scroll,
-                text="❌ ERRORS (must be fixed):",
-                font=ctk.CTkFont(size=14, weight="bold"),
-                text_color="red"
-            )
-            errors_header.pack(anchor="w", pady=(0, 10))
-
-            for error in preview_results['errors']:
-                error_label = ctk.CTkLabel(
-                    errors_scroll,
-                    text=f"• {error}",
-                    font=ctk.CTkFont(size=12),
-                    text_color="red",
-                    wraplength=900,
-                    anchor="w"
-                )
-                error_label.pack(anchor="w", pady=2, padx=20)
-
-        if preview_results.get('warnings'):
-            warnings_header = ctk.CTkLabel(
-                errors_scroll,
-                text="\n⚠ WARNINGS (may continue with caution):",
-                font=ctk.CTkFont(size=14, weight="bold"),
+        # Instructions
+        if error_count > 0:
+            instructions = ctk.CTkLabel(
+                dialog,
+                text="Fix the errors below by editing the date and time fields, then click 'Import Data'.",
+                font=ctk.CTkFont(size=13),
                 text_color="orange"
             )
-            warnings_header.pack(anchor="w", pady=(20, 10))
+            instructions.pack(pady=(0, 10))
 
-            for warning in preview_results['warnings']:
-                warning_label = ctk.CTkLabel(
-                    errors_scroll,
-                    text=f"• {warning}",
-                    font=ctk.CTkFont(size=12),
-                    text_color="orange",
-                    wraplength=900,
-                    anchor="w"
-                )
-                warning_label.pack(anchor="w", pady=2, padx=20)
+        # Scrollable frame for error visits only
+        scroll_label = ctk.CTkLabel(
+            dialog,
+            text="Visits with Errors (fix before importing):" if error_count > 0 else "All visits are valid!",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color="red" if error_count > 0 else "green"
+        )
+        scroll_label.pack(pady=(10, 5))
 
-        # Clients preview tab
-        clients_scroll = ctk.CTkScrollableFrame(tab_clients)
-        clients_scroll.pack(fill="both", expand=True, padx=10, pady=10)
-
-        for idx, client in enumerate(preview_results.get('clients', [])):
-            client_frame = ctk.CTkFrame(clients_scroll)
-            client_frame.pack(fill="x", pady=5)
-
-            client_text = f"{idx+1}. {client['name']}"
-            if client.get('monthly_charge') is not None:
-                client_text += f" - ${client['monthly_charge']:.2f}/month"
-            else:
-                client_text += " - $0.00/month (will need to update)"
-
-            client_label = ctk.CTkLabel(
-                client_frame,
-                text=client_text,
-                font=ctk.CTkFont(size=12)
-            )
-            client_label.pack(anchor="w", padx=10, pady=5)
-
-        # Visits preview tab with editable fields
-        visits_scroll = ctk.CTkScrollableFrame(tab_visits)
-        visits_scroll.pack(fill="both", expand=True, padx=10, pady=10)
+        visits_scroll = ctk.CTkScrollableFrame(dialog, height=350)
+        visits_scroll.pack(fill="both", expand=True, padx=20, pady=(0, 20))
 
         # Store editable visit data
         self.editable_visits = []
+        self.hidden_visits = visits_without_errors  # Store all valid visits
 
-        total_visits = len(preview_results.get('visits', []))
-
-        # Limit display to first 200 visits to avoid UI slowdown
-        max_display = 200
-        visits_to_show = preview_results.get('visits', [])[:max_display]
-
-        if total_visits > max_display:
-            warning_label = ctk.CTkLabel(
-                visits_scroll,
-                text=f"⚠ Showing first {max_display} of {total_visits} visits for performance.\nAll {total_visits} visits will be imported.",
-                font=ctk.CTkFont(size=13, weight="bold"),
-                text_color="orange"
-            )
-            warning_label.pack(pady=10)
-
-        for idx, visit in enumerate(visits_to_show):
-            has_error = visit.get('has_error', False)
-
-            visit_frame = ctk.CTkFrame(visits_scroll, border_width=2, border_color="red" if has_error else "gray")
+        # Only show visits with errors
+        for idx, visit in enumerate(visits_with_errors):
+            visit_frame = ctk.CTkFrame(visits_scroll, border_width=2, border_color="red")
             visit_frame.pack(fill="x", pady=8, padx=5)
             visit_frame.grid_columnconfigure(1, weight=1)
 
             # Row number and client name
-            header_text = f"#{idx+1} - {visit['client_name']}"
+            header_text = f"Error #{idx+1} - {visit['client_name']}"
             header_label = ctk.CTkLabel(
                 visit_frame,
                 text=header_text,
-                font=ctk.CTkFont(size=13, weight="bold")
+                font=ctk.CTkFont(size=14, weight="bold")
             )
             header_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 5))
 
-            # Error message if present
-            if has_error:
-                error_label = ctk.CTkLabel(
-                    visit_frame,
-                    text=f"❌ ERROR: {visit.get('error_msg', 'Unknown error')}",
-                    font=ctk.CTkFont(size=11),
-                    text_color="red"
-                )
-                error_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 5))
+            # Error message
+            error_label = ctk.CTkLabel(
+                visit_frame,
+                text=f"❌ {visit.get('error_msg', 'Unknown error')}",
+                font=ctk.CTkFont(size=12),
+                text_color="red",
+                wraplength=850
+            )
+            error_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
 
             # Editable fields
             row_num = 2
 
             # Date field
-            date_label = ctk.CTkLabel(visit_frame, text="Date:", font=ctk.CTkFont(size=12))
+            date_label = ctk.CTkLabel(visit_frame, text="Date:", font=ctk.CTkFont(size=13))
             date_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
 
-            date_entry = ctk.CTkEntry(visit_frame, width=150, font=ctk.CTkFont(size=12))
+            date_entry = ctk.CTkEntry(visit_frame, width=200, font=ctk.CTkFont(size=13))
             date_entry.insert(0, str(visit.get('date', '')))
             date_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
             row_num += 1
 
             # Start time field
-            start_label = ctk.CTkLabel(visit_frame, text="Start Time:", font=ctk.CTkFont(size=12))
+            start_label = ctk.CTkLabel(visit_frame, text="Start Time:", font=ctk.CTkFont(size=13))
             start_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
 
-            start_entry = ctk.CTkEntry(visit_frame, width=150, font=ctk.CTkFont(size=12))
+            start_entry = ctk.CTkEntry(visit_frame, width=200, font=ctk.CTkFont(size=13))
             start_entry.insert(0, str(visit.get('start_time', '')))
             start_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
             row_num += 1
 
             # End time field
-            end_label = ctk.CTkLabel(visit_frame, text="End Time:", font=ctk.CTkFont(size=12))
+            end_label = ctk.CTkLabel(visit_frame, text="End Time:", font=ctk.CTkFont(size=13))
             end_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
 
-            end_entry = ctk.CTkEntry(visit_frame, width=150, font=ctk.CTkFont(size=12))
+            end_entry = ctk.CTkEntry(visit_frame, width=200, font=ctk.CTkFont(size=13))
             end_entry.insert(0, str(visit.get('end_time', '')))
             end_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
             row_num += 1
@@ -1767,33 +1712,27 @@ OCR Scanning Instructions (To be implemented):
                 'start_entry': start_entry,
                 'end_entry': end_entry,
                 'notes': visit.get('notes', ''),
-                'original_error': has_error
+                'original_error': True
             })
 
-        # Store remaining visits that weren't displayed for editing
-        self.hidden_visits = preview_results.get('visits', [])[max_display:] if total_visits > max_display else []
-
-        # Action message
-        action_text = "Edit any incorrect data in the Visits tab, then click 'Import Data' to proceed."
-        if error_count:
-            action_text = "Fix the errors shown above by editing the visit data in the Visits tab."
-
-        action_label = ctk.CTkLabel(
-            dialog,
-            text=action_text,
-            font=ctk.CTkFont(size=13),
-            text_color="green" if not error_count else "orange"
-        )
-        action_label.pack(pady=(0, 10))
+        # If no errors, show success message
+        if error_count == 0:
+            success_label = ctk.CTkLabel(
+                visits_scroll,
+                text="✓ All visits are valid and ready to import!",
+                font=ctk.CTkFont(size=16),
+                text_color="green"
+            )
+            success_label.pack(pady=50)
 
         # Buttons
         btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=(0, 20))
 
-        # Always allow import - edited data will be validated
+        # Import button
         proceed_btn = ctk.CTkButton(
             btn_frame,
-            text=f"Import Data ({len(preview_results.get('visits', []))} visits)",
+            text=f"Import Data ({len(preview_results.get('clients', []))} clients, {total_visits} visits)",
             command=lambda: self.confirm_and_import(dialog, preview_results),
             font=ctk.CTkFont(size=16),
             height=45,
@@ -1803,7 +1742,7 @@ OCR Scanning Instructions (To be implemented):
 
         cancel_btn = ctk.CTkButton(
             btn_frame,
-            text="Cancel and Fix Excel File",
+            text="Cancel",
             command=dialog.destroy,
             font=ctk.CTkFont(size=16),
             height=45,
