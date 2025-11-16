@@ -841,7 +841,8 @@ class LandscapingApp(ctk.CTk):
         self.materials_table_frame.grid_columnconfigure(0, weight=2)  # Material name
         self.materials_table_frame.grid_columnconfigure(1, weight=1)  # Cost
         self.materials_table_frame.grid_columnconfigure(2, weight=1)  # Unit
-        self.materials_table_frame.grid_columnconfigure(3, weight=0)  # Delete checkbox
+        self.materials_table_frame.grid_columnconfigure(3, weight=1)  # Total
+        self.materials_table_frame.grid_columnconfigure(4, weight=0)  # Delete checkbox
 
         # Store material table data
         self.current_client_id = client_id
@@ -869,7 +870,7 @@ class LandscapingApp(ctk.CTk):
         current_row = 0
 
         # Table headers
-        headers = ["Material/Service", "Cost ($)", "Unit", "Delete"]
+        headers = ["Material/Service", "Cost ($)", "Unit", "Total", "Delete"]
         for col, header_text in enumerate(headers):
             header = ctk.CTkLabel(
                 self.materials_table_frame,
@@ -879,6 +880,12 @@ class LandscapingApp(ctk.CTk):
             )
             header.grid(row=current_row, column=col, padx=5, pady=3, sticky="w")
         current_row += 1
+
+        # Calculate total cost from materials
+        total_materials_cost = 0
+        for mat in existing_materials:
+            # Use total_cost from database query (effective_cost * multiplier)
+            total_materials_cost += mat.get('total_cost', 0)
 
         # Add existing materials
         for mat in existing_materials:
@@ -890,6 +897,26 @@ class LandscapingApp(ctk.CTk):
             self.add_material_row_to_table(current_row, None)
             current_row += 1
 
+        # Show total cost
+        total_frame = ctk.CTkFrame(self.materials_table_frame, fg_color="transparent")
+        total_frame.grid(row=current_row, column=0, columnspan=5, sticky="ew", padx=5, pady=10)
+
+        total_label = ctk.CTkLabel(
+            total_frame,
+            text="Total Materials & Services Cost:",
+            font=ctk.CTkFont(size=13, weight="bold")
+        )
+        total_label.pack(side=tk.LEFT, padx=5)
+
+        total_value = ctk.CTkLabel(
+            total_frame,
+            text=f"${total_materials_cost:.2f}",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#4CAF50"
+        )
+        total_value.pack(side=tk.LEFT, padx=5)
+        current_row += 1
+
         # Add row button
         add_row_btn = ctk.CTkButton(
             self.materials_table_frame,
@@ -900,7 +927,7 @@ class LandscapingApp(ctk.CTk):
             fg_color="transparent",
             hover_color="#3a3a3a"
         )
-        add_row_btn.grid(row=current_row, column=0, columnspan=4, sticky="w", padx=5, pady=5)
+        add_row_btn.grid(row=current_row, column=0, columnspan=5, sticky="w", padx=5, pady=5)
         current_row += 1
 
         # Save button (initially disabled)
@@ -914,7 +941,7 @@ class LandscapingApp(ctk.CTk):
             hover_color="gray",
             state="disabled"
         )
-        self.materials_save_btn.grid(row=current_row, column=0, columnspan=4, sticky="ew", padx=5, pady=10)
+        self.materials_save_btn.grid(row=current_row, column=0, columnspan=5, sticky="ew", padx=5, pady=10)
 
     def add_material_row_to_table(self, row_num, existing_material=None):
         """Add a single row to the materials table."""
@@ -965,6 +992,20 @@ class LandscapingApp(ctk.CTk):
         if existing_material:
             unit_entry.insert(0, str(existing_material.get('multiplier', 1)))
 
+        # Total label (cost × unit)
+        total_var = tk.StringVar(value="$0.00")
+        total_label = ctk.CTkLabel(
+            self.materials_table_frame,
+            textvariable=total_var,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#4CAF50"
+        )
+        total_label.grid(row=row_num, column=3, padx=5, pady=3, sticky="w")
+
+        # Calculate initial total if existing material
+        if existing_material:
+            total_var.set(f"${existing_material.get('total_cost', 0):.2f}")
+
         # Delete checkbox
         delete_var = tk.BooleanVar(value=False)
         delete_check = ctk.CTkCheckBox(
@@ -974,7 +1015,35 @@ class LandscapingApp(ctk.CTk):
             width=28,
             command=self.on_material_change
         )
-        delete_check.grid(row=row_num, column=3, padx=5, pady=3)
+        delete_check.grid(row=row_num, column=4, padx=5, pady=3)
+
+        # Function to update total label
+        def update_total_label(*args):
+            # Get the effective cost
+            selected_name = material_var.get()
+            selected_mat = next((m for m in self.all_materials if m['name'] == selected_name), None)
+
+            cost_str = cost_entry.get().strip()
+            if cost_str and cost_str != "Auto":
+                try:
+                    cost = float(cost_str)
+                except ValueError:
+                    cost = 0
+            elif selected_mat:
+                cost = selected_mat['default_cost']
+            else:
+                cost = 0
+
+            # Get the unit
+            unit_str = unit_entry.get().strip()
+            try:
+                unit = float(unit_str) if unit_str else 1.0
+            except ValueError:
+                unit = 1.0
+
+            # Calculate and display total
+            total = cost * unit
+            total_var.set(f"${total:.2f}")
 
         # Auto-update cost when material selection changes
         def on_material_dropdown_change(*args):
@@ -985,14 +1054,19 @@ class LandscapingApp(ctk.CTk):
                 if not current_cost or current_cost == "Auto":
                     cost_entry.delete(0, tk.END)
                     cost_entry.configure(placeholder_text=f"{selected_mat['default_cost']:.2f}")
+            update_total_label()
             self.on_material_change()
 
         material_var.trace('w', on_material_dropdown_change)
         on_material_dropdown_change()  # Set initial placeholder
 
         # Bind change detection to entries
-        cost_entry.bind('<KeyRelease>', lambda e: self.on_material_change())
-        unit_entry.bind('<KeyRelease>', lambda e: self.on_material_change())
+        def on_entry_change(e):
+            update_total_label()
+            self.on_material_change()
+
+        cost_entry.bind('<KeyRelease>', on_entry_change)
+        unit_entry.bind('<KeyRelease>', on_entry_change)
 
         # Store row reference
         row_data = {
@@ -1001,8 +1075,9 @@ class LandscapingApp(ctk.CTk):
             'cost_entry': cost_entry,
             'unit_entry': unit_entry,
             'delete_var': delete_var,
+            'total_var': total_var,
             'existing': existing_material,
-            'widgets': [material_dropdown, cost_entry, unit_entry, delete_check]
+            'widgets': [material_dropdown, cost_entry, unit_entry, total_label, delete_check]
         }
         self.material_rows.append(row_data)
 
@@ -1094,11 +1169,16 @@ class LandscapingApp(ctk.CTk):
         # Find the next row number (before the buttons)
         next_row = len(self.material_rows) + 1  # +1 for header
 
-        # Remove the add button and save button from grid temporarily
+        # Remove the total frame, add button and save button from grid temporarily
+        total_frame = None
         add_btn = None
         save_btn = None
         for widget in self.materials_table_frame.winfo_children():
-            if isinstance(widget, ctk.CTkButton):
+            if isinstance(widget, ctk.CTkFrame) and widget.cget("fg_color") == "transparent":
+                # This is likely the total frame
+                total_frame = widget
+                widget.grid_forget()
+            elif isinstance(widget, ctk.CTkButton):
                 text = widget.cget("text")
                 if "Add Another Row" in text:
                     add_btn = widget
@@ -1110,13 +1190,16 @@ class LandscapingApp(ctk.CTk):
         # Add the new empty row
         self.add_material_row_to_table(next_row, None)
 
-        # Re-grid the buttons
+        # Re-grid the widgets
+        next_row += 1
+        if total_frame:
+            total_frame.grid(row=next_row, column=0, columnspan=5, sticky="ew", padx=5, pady=10)
         next_row += 1
         if add_btn:
-            add_btn.grid(row=next_row, column=0, columnspan=4, sticky="w", padx=5, pady=5)
+            add_btn.grid(row=next_row, column=0, columnspan=5, sticky="w", padx=5, pady=5)
         next_row += 1
         if save_btn:
-            save_btn.grid(row=next_row, column=0, columnspan=4, sticky="ew", padx=5, pady=10)
+            save_btn.grid(row=next_row, column=0, columnspan=5, sticky="ew", padx=5, pady=10)
 
     def save_all_material_changes(self):
         """Save all changes in the materials table."""
