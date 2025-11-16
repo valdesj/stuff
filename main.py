@@ -1008,6 +1008,10 @@ class LandscapingApp(ctk.CTk):
 
     def on_material_change(self):
         """Detect if there are any changes in the materials table."""
+        # Check if save button exists yet (it's created after rows)
+        if not hasattr(self, 'materials_save_btn') or self.materials_save_btn is None:
+            return
+
         has_changes = False
 
         # Get current state from database
@@ -1017,9 +1021,13 @@ class LandscapingApp(ctk.CTk):
         for row in self.material_rows:
             # Check if this is a new row (no existing material)
             if not row['existing']:
-                # Check if user has selected a material
+                # Check if user has entered or selected anything meaningful
                 selected_name = row['material_var'].get()
-                if selected_name and selected_name != "No materials available":
+                cost_str = row['cost_entry'].get().strip()
+                unit_str = row['unit_entry'].get().strip()
+
+                # Has changes if: cost entered, unit entered, or material changed from initial
+                if cost_str or unit_str:
                     has_changes = True
                     break
             else:
@@ -1062,18 +1070,21 @@ class LandscapingApp(ctk.CTk):
                         break
 
         # Update save button state
-        if has_changes:
-            self.materials_save_btn.configure(
-                fg_color="green",
-                hover_color="#00AA00",
-                state="normal"
-            )
-        else:
-            self.materials_save_btn.configure(
-                fg_color="gray",
-                hover_color="gray",
-                state="disabled"
-            )
+        try:
+            if has_changes:
+                self.materials_save_btn.configure(
+                    fg_color="green",
+                    hover_color="#00AA00",
+                    state="normal"
+                )
+            else:
+                self.materials_save_btn.configure(
+                    fg_color="gray",
+                    hover_color="gray",
+                    state="disabled"
+                )
+        except:
+            pass  # Button may not exist yet during construction
 
     def add_another_material_row(self):
         """Add another empty row to the materials table."""
