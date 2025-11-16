@@ -847,23 +847,25 @@ class LandscapingApp(ctk.CTk):
         self.current_client_id = client_id
         self.material_rows = []
         self.materials_have_changes = False
+        self.num_empty_rows = 1
 
         # Get data
         client_materials = self.db.get_client_materials(client_id)
         self.all_materials = self.db.get_all_materials()
 
         # Build the table
-        self.rebuild_materials_table(client_materials)
+        self.rebuild_materials_table(client_materials, num_empty_rows=1)
 
         row += 1
 
-    def rebuild_materials_table(self, existing_materials):
+    def rebuild_materials_table(self, existing_materials, num_empty_rows=1):
         """Build or rebuild the materials table."""
         # Clear existing widgets
         for widget in self.materials_table_frame.winfo_children():
             widget.destroy()
 
         self.material_rows = []
+        self.num_empty_rows = num_empty_rows
         current_row = 0
 
         # Table headers
@@ -883,9 +885,10 @@ class LandscapingApp(ctk.CTk):
             self.add_material_row_to_table(current_row, mat)
             current_row += 1
 
-        # Always add one empty row
-        self.add_material_row_to_table(current_row, None)
-        current_row += 1
+        # Add empty rows for new materials
+        for i in range(num_empty_rows):
+            self.add_material_row_to_table(current_row, None)
+            current_row += 1
 
         # Add row button
         add_row_btn = ctk.CTkButton(
@@ -1074,33 +1077,10 @@ class LandscapingApp(ctk.CTk):
 
     def add_another_material_row(self):
         """Add another empty row to the materials table."""
-        # Find the next row number (before the buttons)
-        next_row = len(self.material_rows) + 1  # +1 for header
-
-        # Remove the add button and save button temporarily
-        for widget in self.materials_table_frame.winfo_children():
-            grid_info = widget.grid_info()
-            if grid_info and int(grid_info['row']) >= next_row:
-                widget.grid_forget()
-
-        # Add the new row
-        self.add_material_row_to_table(next_row, None)
-
-        # Re-add the buttons
-        next_row += 1
-        add_row_btn = ctk.CTkButton(
-            self.materials_table_frame,
-            text="+ Add Another Row",
-            command=self.add_another_material_row,
-            font=ctk.CTkFont(size=11),
-            height=28,
-            fg_color="transparent",
-            hover_color="#3a3a3a"
-        )
-        add_row_btn.grid(row=next_row, column=0, columnspan=4, sticky="w", padx=5, pady=5)
-        next_row += 1
-
-        self.materials_save_btn.grid(row=next_row, column=0, columnspan=4, sticky="ew", padx=5, pady=10)
+        # Get current client materials from database
+        client_materials = self.db.get_client_materials(self.current_client_id)
+        # Rebuild table with one more empty row
+        self.rebuild_materials_table(client_materials, self.num_empty_rows + 1)
 
     def save_all_material_changes(self):
         """Save all changes in the materials table."""
