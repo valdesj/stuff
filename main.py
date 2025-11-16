@@ -744,7 +744,7 @@ class LandscapingApp(ctk.CTk):
         )
         material_menu.pack(pady=5, padx=20, fill="x")
 
-        # Custom cost option
+        # Custom cost option (only for global materials)
         custom_cost_var = tk.BooleanVar(value=False)
         custom_check = ctk.CTkCheckBox(
             scroll_frame,
@@ -752,11 +752,36 @@ class LandscapingApp(ctk.CTk):
             variable=custom_cost_var,
             font=ctk.CTkFont(size=13)
         )
-        custom_check.pack(pady=10)
 
-        cost_entry = ctk.CTkEntry(scroll_frame, placeholder_text="Custom cost", height=35)
-        cost_entry.pack(pady=5, padx=20, fill="x")
-        cost_entry.configure(state="disabled")
+        cost_label = ctk.CTkLabel(scroll_frame, text="Cost:", font=ctk.CTkFont(size=14))
+        cost_entry = ctk.CTkEntry(scroll_frame, placeholder_text="Cost", height=35)
+
+        def update_cost_ui(*args):
+            """Update cost UI based on selected material."""
+            selected_name = material_var.get()
+            selected_material = next(m for m in available_materials if m['name'] == selected_name)
+
+            # Clear existing cost widgets
+            for widget in scroll_frame.winfo_children():
+                if widget in [custom_check, cost_label, cost_entry]:
+                    widget.pack_forget()
+
+            if selected_material['is_global']:
+                # Global material - show checkbox to enable custom cost
+                custom_check.pack(pady=10)
+                cost_entry.pack(pady=5, padx=20, fill="x")
+                if not custom_cost_var.get():
+                    cost_entry.configure(state="disabled")
+                    cost_entry.delete(0, tk.END)
+                else:
+                    cost_entry.configure(state="normal")
+            else:
+                # Non-global material - always show cost entry (no checkbox needed)
+                cost_label.pack(pady=(10, 5))
+                cost_entry.configure(state="normal")
+                cost_entry.delete(0, tk.END)
+                cost_entry.insert(0, str(selected_material.get('default_cost', '0.00')))
+                cost_entry.pack(pady=5, padx=20, fill="x")
 
         def toggle_cost_entry():
             if custom_cost_var.get():
@@ -766,6 +791,10 @@ class LandscapingApp(ctk.CTk):
                 cost_entry.delete(0, tk.END)
 
         custom_check.configure(command=toggle_cost_entry)
+        material_var.trace('w', update_cost_ui)
+
+        # Initial UI setup
+        update_cost_ui()
 
         # Unit option
         multiplier_label = ctk.CTkLabel(
@@ -796,7 +825,20 @@ class LandscapingApp(ctk.CTk):
             selected_material = next(m for m in available_materials if m['name'] == selected_name)
 
             custom_cost = None
-            if custom_cost_var.get():
+
+            # For non-global materials, cost is always required
+            if not selected_material['is_global']:
+                cost_str = cost_entry.get().strip()
+                if not cost_str:
+                    messagebox.showerror("Error", "Cost is required for non-global materials")
+                    return
+                try:
+                    custom_cost = float(cost_str)
+                except ValueError:
+                    messagebox.showerror("Error", "Cost must be a valid number")
+                    return
+            # For global materials, only use custom cost if checkbox is checked
+            elif custom_cost_var.get():
                 try:
                     custom_cost = float(cost_entry.get())
                 except ValueError:
