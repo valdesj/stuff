@@ -621,7 +621,7 @@ class LandscapingApp(ctk.CTk):
         # Listbox
         self.clients_listbox = tk.Listbox(
             listbox_frame,
-            font=("Arial", 11),
+            font=("Arial", 14),
             selectmode=tk.SINGLE,
             yscrollcommand=scrollbar.set,
             bg="#2b2b2b",
