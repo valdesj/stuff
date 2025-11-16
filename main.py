@@ -613,6 +613,9 @@ class LandscapingApp(ctk.CTk):
         self.clients_scroll_frame.grid(row=2, column=0, sticky="nsew", padx=8, pady=(3, 8))
         self.clients_scroll_frame.grid_columnconfigure(0, weight=1)
 
+        # Increase scroll speed
+        self.clients_scroll_frame._parent_canvas.configure(yscrollincrement=20)
+
         # Track selected client button
         self.selected_client_button = None
         self.client_buttons = []
@@ -690,15 +693,16 @@ class LandscapingApp(ctk.CTk):
             btn = ctk.CTkButton(
                 self.clients_scroll_frame,
                 text=display_name,
-                font=ctk.CTkFont(size=20),
-                height=60,
+                font=ctk.CTkFont(size=17),
+                height=51,
                 corner_radius=8,
                 fg_color="#3a3a3a",
                 hover_color="#4a4a4a",
                 text_color="white",
-                anchor="w"
+                anchor="w",
+                border_width=0
             )
-            btn.grid(row=idx, column=0, sticky="ew", padx=5, pady=5)
+            btn.grid(row=idx, column=0, sticky="ew", padx=5, pady=4)
 
             # Store reference and set click handler
             self.client_buttons.append(btn)
@@ -708,10 +712,17 @@ class LandscapingApp(ctk.CTk):
         """Handle client button click."""
         # Reset previous selection
         if self.selected_client_button:
-            self.selected_client_button.configure(fg_color="#3a3a3a")
+            self.selected_client_button.configure(
+                fg_color="#3a3a3a",
+                border_width=0
+            )
 
-        # Highlight selected button
-        button.configure(fg_color="#1f6aa5")
+        # Make selected button appear pressed with darker color and inner border
+        button.configure(
+            fg_color="#154a78",
+            border_width=2,
+            border_color="#0d3552"
+        )
         self.selected_client_button = button
 
         # Show client details
