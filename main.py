@@ -89,6 +89,16 @@ class LandscapingApp(ctk.CTk):
         )
         title.grid(row=0, column=0, sticky="w", padx=8, pady=8)
 
+        settings_btn = ctk.CTkButton(
+            header_frame,
+            text="⚙ Settings",
+            command=self.show_settings_dialog,
+            font=ctk.CTkFont(size=12),
+            height=32,
+            width=120
+        )
+        settings_btn.grid(row=0, column=1, padx=8, pady=8)
+
         refresh_btn = ctk.CTkButton(
             header_frame,
             text="Refresh All",
@@ -97,7 +107,7 @@ class LandscapingApp(ctk.CTk):
             height=32,
             width=120
         )
-        refresh_btn.grid(row=0, column=1, padx=8, pady=8)
+        refresh_btn.grid(row=0, column=2, padx=8, pady=8)
 
     # ==================== DASHBOARD TAB ====================
 
@@ -181,16 +191,22 @@ class LandscapingApp(ctk.CTk):
 
         # Create stat items
         stat_items = [
-            ("Visits Recorded:", f"{stats['visit_count']}"),
-            ("Total Material Costs:", f"${stats['total_material_cost']:.2f}"),
-            ("Avg Cost per Visit:", f"${stats['avg_cost_per_visit']:.2f}"),
-            ("Est. Visits/Year:", f"{stats['visits_per_year']:.1f}"),
-            ("Calculated Monthly Cost:", f"${stats['calculated_monthly_cost']:.2f}"),
-            ("Actual Monthly Charge:", f"${stats['actual_monthly_charge']:.2f}"),
-            ("Monthly Profit/Loss:", f"${stats['monthly_profit_loss']:.2f}"),
+            ("Total Visits (this year):", f"{stats['visits_this_year']}", None),
+            ("Total Material Costs:", f"${stats['total_material_cost']:.2f}", None),
+            ("Total Services Costs:", f"${stats['total_service_cost']:.2f}", None),
+            ("Avg Time per Visit:", f"{stats['avg_time_per_visit']:.1f} min",
+             f"Shortest: {stats['min_time_per_visit']:.1f} min\nLongest: {stats['max_time_per_visit']:.1f} min"),
+            ("Avg Cost per Visit:", f"${stats['avg_cost_per_visit']:.2f}", None),
+            ("Est Yearly Cost:", f"${stats['est_yearly_cost']:.2f}", None),
+            ("Proposed Monthly Rate:", f"${stats['proposed_monthly_rate']:.2f}", None),
+            ("Actual Monthly Charge:", f"${stats['actual_monthly_charge']:.2f}", None),
+            ("Monthly Profit/Loss:", f"${stats['monthly_profit_loss']:.2f}", None),
         ]
 
-        for i, (label, value) in enumerate(stat_items):
+        for i, item in enumerate(stat_items):
+            label, value = item[0], item[1]
+            tooltip_text = item[2] if len(item) > 2 else None
+
             col = i % 2
             row_pos = i // 2
 
@@ -210,6 +226,45 @@ class LandscapingApp(ctk.CTk):
                 font=ctk.CTkFont(size=11, weight="bold")
             )
             val.grid(row=0, column=1, sticky="w")
+
+            # Add tooltip if available
+            if tooltip_text:
+                info_label = ctk.CTkLabel(
+                    item_frame,
+                    text="?",
+                    font=ctk.CTkFont(size=10, weight="bold"),
+                    text_color="gray",
+                    cursor="hand2"
+                )
+                info_label.grid(row=0, column=2, sticky="w", padx=(4, 0))
+
+                # Create tooltip
+                def create_tooltip(widget, text):
+                    def show_tooltip(event):
+                        tooltip = ctk.CTkToplevel()
+                        tooltip.wm_overrideredirect(True)
+                        tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+
+                        label = ctk.CTkLabel(
+                            tooltip,
+                            text=text,
+                            font=ctk.CTkFont(size=10),
+                            fg_color=("gray85", "gray20"),
+                            corner_radius=5
+                        )
+                        label.pack(padx=8, pady=6)
+
+                        widget.tooltip = tooltip
+
+                    def hide_tooltip(event):
+                        if hasattr(widget, 'tooltip'):
+                            widget.tooltip.destroy()
+                            del widget.tooltip
+
+                    widget.bind("<Enter>", show_tooltip)
+                    widget.bind("<Leave>", hide_tooltip)
+
+                create_tooltip(info_label, tooltip_text)
 
     # ==================== CLIENTS TAB ====================
 
@@ -1559,6 +1614,32 @@ class LandscapingApp(ctk.CTk):
         unit_entry = ctk.CTkEntry(scroll_frame, placeholder_text="e.g., bag, gallon, service", height=35)
         unit_entry.pack(pady=5, padx=20, fill="x")
 
+        # Type selection (Material or Service)
+        type_label = ctk.CTkLabel(scroll_frame, text="Type *:", font=ctk.CTkFont(size=14))
+        type_label.pack(pady=(10, 5))
+
+        type_var = tk.StringVar(value="material")
+        type_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+        type_frame.pack(pady=5)
+
+        material_radio = ctk.CTkRadioButton(
+            type_frame,
+            text="Material (physical items like fertilizer, mulch)",
+            variable=type_var,
+            value="material",
+            font=ctk.CTkFont(size=12)
+        )
+        material_radio.pack(side="left", padx=10)
+
+        service_radio = ctk.CTkRadioButton(
+            type_frame,
+            text="Service (labor/services)",
+            variable=type_var,
+            value="service",
+            font=ctk.CTkFont(size=12)
+        )
+        service_radio.pack(side="left", padx=10)
+
         # Is global
         is_global_var = tk.BooleanVar(value=True)
         global_check = ctk.CTkCheckBox(
@@ -1594,7 +1675,8 @@ class LandscapingApp(ctk.CTk):
                 default_cost=cost,
                 unit=unit_entry.get().strip(),
                 is_global=is_global_var.get(),
-                description=desc_entry.get("1.0", "end-1c")
+                description=desc_entry.get("1.0", "end-1c"),
+                material_type=type_var.get()
             )
 
             messagebox.showinfo("Success", "Material/service added successfully!")
@@ -1662,6 +1744,32 @@ class LandscapingApp(ctk.CTk):
         unit_entry.insert(0, material['unit'] or "")
         unit_entry.pack(pady=5, padx=20, fill="x")
 
+        # Type selection (Material or Service)
+        type_label = ctk.CTkLabel(dialog, text="Type *:", font=ctk.CTkFont(size=14))
+        type_label.pack(pady=(10, 5))
+
+        type_var = tk.StringVar(value=material.get('material_type', 'material'))
+        type_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        type_frame.pack(pady=5)
+
+        material_radio = ctk.CTkRadioButton(
+            type_frame,
+            text="Material (physical items)",
+            variable=type_var,
+            value="material",
+            font=ctk.CTkFont(size=12)
+        )
+        material_radio.pack(side="left", padx=10)
+
+        service_radio = ctk.CTkRadioButton(
+            type_frame,
+            text="Service (labor/services)",
+            variable=type_var,
+            value="service",
+            font=ctk.CTkFont(size=12)
+        )
+        service_radio.pack(side="left", padx=10)
+
         # Is global
         is_global_var = tk.BooleanVar(value=bool(material['is_global']))
         global_check = ctk.CTkCheckBox(
@@ -1699,7 +1807,8 @@ class LandscapingApp(ctk.CTk):
                 default_cost=cost,
                 unit=unit_entry.get().strip(),
                 is_global=1 if is_global_var.get() else 0,
-                description=desc_entry.get("1.0", "end-1c")
+                description=desc_entry.get("1.0", "end-1c"),
+                material_type=type_var.get()
             )
 
             messagebox.showinfo("Success", "Material/service updated successfully!")
@@ -2558,6 +2667,88 @@ OCR Scanning Instructions (To be implemented):
             return date_obj.strftime('%m/%d/%Y')
         except:
             return date_str  # Return original if parsing fails
+
+    def show_settings_dialog(self):
+        """Show settings dialog to configure global application settings."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Settings")
+        dialog.geometry("400x250")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Header
+        header = ctk.CTkLabel(
+            dialog,
+            text="Application Settings",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        header.pack(pady=20, padx=20)
+
+        # Hourly Rate Setting
+        hourly_frame = ctk.CTkFrame(dialog)
+        hourly_frame.pack(pady=10, padx=20, fill="x")
+
+        hourly_label = ctk.CTkLabel(
+            hourly_frame,
+            text="Hourly Labor Rate (per person):",
+            font=ctk.CTkFont(size=14)
+        )
+        hourly_label.pack(pady=(10, 5), padx=15, anchor="w")
+
+        hourly_entry = ctk.CTkEntry(
+            hourly_frame,
+            placeholder_text="e.g., 25.00",
+            height=35
+        )
+        hourly_entry.pack(pady=5, padx=15, fill="x")
+
+        # Load current value
+        current_rate = self.db.get_hourly_rate()
+        hourly_entry.insert(0, str(current_rate))
+
+        help_text = ctk.CTkLabel(
+            hourly_frame,
+            text="Labor cost = (visit time in hours) × 2 crew members × hourly rate",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        help_text.pack(pady=(0, 10), padx=15)
+
+        def save_settings():
+            try:
+                new_rate = float(hourly_entry.get())
+                if new_rate <= 0:
+                    messagebox.showerror("Error", "Hourly rate must be greater than 0")
+                    return
+                self.db.set_hourly_rate(new_rate)
+                messagebox.showinfo("Success", "Settings saved successfully!")
+                self.refresh_dashboard()  # Refresh dashboard to show updated calculations
+                dialog.destroy()
+            except ValueError:
+                messagebox.showerror("Error", "Hourly rate must be a valid number")
+
+        # Buttons
+        button_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        button_frame.pack(pady=20, padx=20, fill="x")
+
+        save_btn = ctk.CTkButton(
+            button_frame,
+            text="Save",
+            command=save_settings,
+            font=ctk.CTkFont(size=12),
+            height=35
+        )
+        save_btn.pack(side="left", padx=(0, 10), expand=True, fill="x")
+
+        cancel_btn = ctk.CTkButton(
+            button_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            font=ctk.CTkFont(size=12),
+            height=35,
+            fg_color="gray"
+        )
+        cancel_btn.pack(side="left", expand=True, fill="x")
 
     def refresh_all(self):
         """Refresh all data displays."""

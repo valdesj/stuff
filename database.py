@@ -54,9 +54,17 @@ class Database:
                 default_cost REAL NOT NULL DEFAULT 0.0,
                 unit TEXT,
                 is_global INTEGER NOT NULL DEFAULT 1,
-                description TEXT
+                description TEXT,
+                material_type TEXT NOT NULL DEFAULT 'material'
             )
         """)
+
+        # Add material_type column to existing tables (migration)
+        try:
+            cursor.execute("ALTER TABLE materials ADD COLUMN material_type TEXT NOT NULL DEFAULT 'material'")
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
 
         # Client-specific material pricing (overrides global pricing)
         cursor.execute("""
@@ -113,6 +121,17 @@ class Database:
                 FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE
             )
         """)
+
+        # Settings table for global configuration
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+
+        # Initialize default settings if not exists
+        cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('hourly_rate', '25.00')")
 
         self.connection.commit()
 
@@ -180,13 +199,13 @@ class Database:
     # ==================== MATERIAL OPERATIONS ====================
 
     def add_material(self, name: str, default_cost: float, unit: str = "",
-                     is_global: bool = True, description: str = "") -> int:
+                     is_global: bool = True, description: str = "", material_type: str = "material") -> int:
         """Add a new material/service to the catalog."""
         cursor = self.connection.cursor()
         cursor.execute("""
-            INSERT INTO materials (name, default_cost, unit, is_global, description)
-            VALUES (?, ?, ?, ?, ?)
-        """, (name, default_cost, unit, 1 if is_global else 0, description))
+            INSERT INTO materials (name, default_cost, unit, is_global, description, material_type)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (name, default_cost, unit, 1 if is_global else 0, description, material_type))
         self.connection.commit()
         return cursor.lastrowid
 
@@ -198,7 +217,7 @@ class Database:
 
     def update_material(self, material_id: int, **kwargs):
         """Update material information."""
-        allowed_fields = ['name', 'default_cost', 'unit', 'is_global', 'description']
+        allowed_fields = ['name', 'default_cost', 'unit', 'is_global', 'description', 'material_type']
         updates = []
         values = []
 
@@ -356,10 +375,35 @@ class Database:
         self.connection.execute("DELETE FROM visit_materials WHERE id = ?", (visit_material_id,))
         self.connection.commit()
 
+    # ==================== SETTINGS OPERATIONS ====================
+
+    def get_setting(self, key: str, default: str = "") -> str:
+        """Get a setting value by key."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        return row['value'] if row else default
+
+    def set_setting(self, key: str, value: str):
+        """Set a setting value."""
+        self.connection.execute("""
+            INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)
+        """, (key, value))
+        self.connection.commit()
+
+    def get_hourly_rate(self) -> float:
+        """Get the hourly labor rate."""
+        return float(self.get_setting('hourly_rate', '25.00'))
+
+    def set_hourly_rate(self, rate: float):
+        """Set the hourly labor rate."""
+        self.set_setting('hourly_rate', str(rate))
+
     # ==================== ANALYTICS & CALCULATIONS ====================
 
     def get_client_statistics(self, client_id: int) -> Dict:
         """Calculate comprehensive statistics for a client."""
+        from datetime import datetime
         cursor = self.connection.cursor()
 
         # Get client info
@@ -367,63 +411,101 @@ class Database:
         if not client:
             return {}
 
-        # Get visit count
+        # Get hourly rate
+        hourly_rate = self.get_hourly_rate()
+
+        # Get current year
+        current_year = datetime.now().year
+
+        # Get visit count (all time)
         cursor.execute("SELECT COUNT(*) as visit_count FROM visits WHERE client_id = ?", (client_id,))
         visit_count = cursor.fetchone()['visit_count']
 
-        # Get total material costs
+        # Get visit count (this year)
+        cursor.execute("""
+            SELECT COUNT(*) as visit_count
+            FROM visits
+            WHERE client_id = ? AND strftime('%Y', visit_date) = ?
+        """, (client_id, str(current_year)))
+        visits_this_year = cursor.fetchone()['visit_count']
+
+        # Get total material costs (materials only)
         cursor.execute("""
             SELECT COALESCE(SUM(vm.quantity * vm.cost_at_time), 0) as total_material_cost
             FROM visits v
             LEFT JOIN visit_materials vm ON v.id = vm.visit_id
-            WHERE v.client_id = ?
+            LEFT JOIN materials m ON vm.material_id = m.id
+            WHERE v.client_id = ? AND m.material_type = 'material'
         """, (client_id,))
         total_material_cost = cursor.fetchone()['total_material_cost']
 
-        # Calculate averages and projections
-        avg_cost_per_visit = total_material_cost / visit_count if visit_count > 0 else 0
+        # Get total service costs (services only)
+        cursor.execute("""
+            SELECT COALESCE(SUM(vm.quantity * vm.cost_at_time), 0) as total_service_cost
+            FROM visits v
+            LEFT JOIN visit_materials vm ON v.id = vm.visit_id
+            LEFT JOIN materials m ON vm.material_id = m.id
+            WHERE v.client_id = ? AND m.material_type = 'service'
+        """, (client_id,))
+        total_service_cost = cursor.fetchone()['total_service_cost']
 
-        # Estimate visits per year (you might want to make this configurable)
-        # For now, let's calculate based on actual visit frequency if we have data
+        # Get total materials + services costs
+        total_materials_services_cost = total_material_cost + total_service_cost
+
+        # Get visit time statistics
         cursor.execute("""
             SELECT
-                MIN(visit_date) as first_visit,
-                MAX(visit_date) as last_visit
+                COALESCE(AVG(duration_minutes), 0) as avg_duration,
+                COALESCE(MIN(duration_minutes), 0) as min_duration,
+                COALESCE(MAX(duration_minutes), 0) as max_duration,
+                COALESCE(SUM(duration_minutes), 0) as total_duration
             FROM visits
             WHERE client_id = ?
         """, (client_id,))
-        date_range = cursor.fetchone()
+        time_stats = cursor.fetchone()
+        avg_time_per_visit = time_stats['avg_duration']
+        min_time_per_visit = time_stats['min_duration']
+        max_time_per_visit = time_stats['max_duration']
+        total_time = time_stats['total_duration']
 
-        # Calculate visits per year based on actual data
-        visits_per_year = visit_count
-        if date_range['first_visit'] and date_range['last_visit']:
-            from datetime import datetime
-            first = datetime.fromisoformat(date_range['first_visit'])
-            last = datetime.fromisoformat(date_range['last_visit'])
-            days_diff = (last - first).days
-            if days_diff > 0:
-                visits_per_year = (visit_count / days_diff) * 365
+        # Calculate labor cost
+        # Total time in hours * 2 crew members * hourly rate
+        total_labor_cost = (total_time / 60) * 2 * hourly_rate
 
-        calculated_yearly_cost = avg_cost_per_visit * visits_per_year
-        calculated_monthly_cost = calculated_yearly_cost / 12
+        # Average cost per visit = (labor cost + materials/services) / visit count
+        total_cost = total_labor_cost + total_materials_services_cost
+        avg_cost_per_visit = total_cost / visit_count if visit_count > 0 else 0
+
+        # Estimated yearly cost = average cost per visit * 52 visits per year
+        est_yearly_cost = avg_cost_per_visit * 52
+
+        # Proposed monthly rate = est yearly cost / 12
+        proposed_monthly_rate = est_yearly_cost / 12
 
         # Compare to actual monthly charge
         actual_monthly_charge = client['monthly_charge']
-        profit_loss = actual_monthly_charge - calculated_monthly_cost
+        profit_loss = actual_monthly_charge - proposed_monthly_rate
         is_profitable = profit_loss >= 0
 
         return {
             'client_id': client_id,
             'client_name': client['name'],
             'visit_count': visit_count,
+            'visits_this_year': visits_this_year,
             'total_material_cost': round(total_material_cost, 2),
+            'total_service_cost': round(total_service_cost, 2),
+            'total_materials_services_cost': round(total_materials_services_cost, 2),
+            'avg_time_per_visit': round(avg_time_per_visit, 1),
+            'min_time_per_visit': round(min_time_per_visit, 1),
+            'max_time_per_visit': round(max_time_per_visit, 1),
+            'total_labor_cost': round(total_labor_cost, 2),
             'avg_cost_per_visit': round(avg_cost_per_visit, 2),
-            'visits_per_year': round(visits_per_year, 1),
-            'calculated_yearly_cost': round(calculated_yearly_cost, 2),
-            'calculated_monthly_cost': round(calculated_monthly_cost, 2),
+            'est_yearly_cost': round(est_yearly_cost, 2),
+            'proposed_monthly_rate': round(proposed_monthly_rate, 2),
             'actual_monthly_charge': round(actual_monthly_charge, 2),
             'monthly_profit_loss': round(profit_loss, 2),
-            'is_profitable': is_profitable
+            'is_profitable': is_profitable,
+            'hourly_rate': round(hourly_rate, 2)
         }
 
     def get_all_client_statistics(self, active_only: bool = True) -> List[Dict]:
