@@ -10,13 +10,6 @@ from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
 from typing import Optional
-import matplotlib
-matplotlib.use('TkAgg')
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import matplotlib.dates as mdates
-import numpy as np
-from scipy.interpolate import make_interp_spline
 from collections import defaultdict
 
 
@@ -34,9 +27,16 @@ class LandscapingApp(ctk.CTk):
         # Initialize database
         self.db = Database()
 
-        # Initialize importers
+        # Load and apply saved color theme
+        saved_theme = self.db.get_setting('color_theme', 'blue')
+        try:
+            ctk.set_default_color_theme(saved_theme)
+        except:
+            ctk.set_default_color_theme("blue")
+
+        # Initialize importers (lazy load OCR scanner only when needed)
         self.excel_importer = ExcelImporter(self.db)
-        self.ocr_scanner = OCRScanner()
+        self.ocr_scanner = None  # Lazy load when OCR tab is accessed
 
         # Configure window
         self.title("Landscaping Client Tracker")
@@ -79,10 +79,39 @@ class LandscapingApp(ctk.CTk):
         self.current_client_id = None
         self.current_visit_id = None
 
-        # Load initial data
+        # Track which tabs have been loaded (lazy loading optimization)
+        self.tabs_loaded = {
+            'dashboard': False,
+            'clients': False,
+            'materials': False
+        }
+
+        # Set up tab change callback for lazy loading
+        self.tabview.configure(command=self.on_tab_change)
+
+        # Load only the dashboard initially (shown by default)
         self.refresh_dashboard()
-        self.refresh_clients_list()
-        self.refresh_materials_list()
+        self.tabs_loaded['dashboard'] = True
+
+    def get_ocr_scanner(self):
+        """Get OCR scanner with lazy initialization."""
+        if self.ocr_scanner is None:
+            self.ocr_scanner = OCRScanner()
+        return self.ocr_scanner
+
+    def on_tab_change(self):
+        """Handle tab change for lazy loading optimization."""
+        current_tab = self.tabview.get()
+
+        # Lazy load clients tab
+        if current_tab == "Clients" and not self.tabs_loaded['clients']:
+            self.refresh_clients_list()
+            self.tabs_loaded['clients'] = True
+
+        # Lazy load materials tab
+        elif current_tab == "Materials" and not self.tabs_loaded['materials']:
+            self.refresh_materials_list()
+            self.tabs_loaded['materials'] = True
 
     def create_header(self):
         """Create the application header with title and refresh button."""
@@ -304,6 +333,15 @@ class LandscapingApp(ctk.CTk):
 
     def update_visualization(self, *args):
         """Update the visualization chart based on current client and mode."""
+        # Lazy import matplotlib and related libraries (optimization)
+        import matplotlib
+        matplotlib.use('TkAgg')
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        import matplotlib.dates as mdates
+        import numpy as np
+        from scipy.interpolate import make_interp_spline
+
         # Clear existing visualization
         for widget in self.viz_canvas_frame.winfo_children():
             widget.destroy()
@@ -401,11 +439,11 @@ class LandscapingApp(ctk.CTk):
             ax.plot(months, averages, marker='o', linestyle='-',
                    linewidth=2, markersize=6, color='#1f77b4')
 
-        ax.set_xlabel("Month", fontsize=9, color='white')
-        ax.set_ylabel(ylabel, fontsize=9, color='white')
-        ax.set_title(title, fontsize=10, color='white', pad=5)
+        ax.set_xlabel("Month", fontsize=12, color='white', fontweight='bold')
+        ax.set_ylabel(ylabel, fontsize=12, color='white', fontweight='bold')
+        ax.set_title(title, fontsize=14, color='white', pad=8, fontweight='bold')
         ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-        ax.tick_params(colors='white', labelsize=8)
+        ax.tick_params(colors='white', labelsize=11)
 
         # Format x-axis to show month names
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%b'))
@@ -2189,8 +2227,9 @@ class LandscapingApp(ctk.CTk):
         )
         template_btn.grid(row=3, column=0, sticky="ew", padx=50, pady=10)
 
-        ocr_state = "normal" if self.ocr_scanner.is_available() else "disabled"
-        ocr_text = "📷 Scan Paper Records" if self.ocr_scanner.is_available() else "📷 Scan Paper Records (Install pytesseract)"
+        ocr_scanner = self.get_ocr_scanner()
+        ocr_state = "normal" if ocr_scanner.is_available() else "disabled"
+        ocr_text = "📷 Scan Paper Records" if ocr_scanner.is_available() else "📷 Scan Paper Records (Install pytesseract)"
 
         ocr_btn = ctk.CTkButton(
             self.tab_import,
@@ -2730,7 +2769,9 @@ OCR Scanning Instructions (To be implemented):
 
     def scan_paper_records(self):
         """Scan and import data from paper records."""
-        if not self.ocr_scanner.is_available():
+        ocr_scanner = self.get_ocr_scanner()
+
+        if not ocr_scanner.is_available():
             messagebox.showerror(
                 "OCR Not Available",
                 "OCR functionality requires pytesseract and tesseract-ocr to be installed.\n\n"
@@ -2755,12 +2796,12 @@ OCR Scanning Instructions (To be implemented):
 
         # Scan all images
         for file_path in file_paths:
-            text = self.ocr_scanner.scan_image(file_path)
+            text = ocr_scanner.scan_image(file_path)
             if text:
-                records = self.ocr_scanner.parse_visit_records(text)
+                records = ocr_scanner.parse_visit_records(text)
                 for record in records:
                     record['source_file'] = file_path
-                    self.ocr_scanner.validate_and_calculate_duration(record)
+                    ocr_scanner.validate_and_calculate_duration(record)
                 all_records.extend(records)
 
         if not all_records:
@@ -2986,7 +3027,7 @@ OCR Scanning Instructions (To be implemented):
         """Show settings dialog to configure global application settings."""
         dialog = ctk.CTkToplevel(self)
         dialog.title("Settings")
-        dialog.geometry("400x250")
+        dialog.geometry("500x550")
         dialog.transient(self)
         dialog.grab_set()
 
@@ -2996,25 +3037,29 @@ OCR Scanning Instructions (To be implemented):
             text="Application Settings",
             font=ctk.CTkFont(size=16, weight="bold")
         )
-        header.pack(pady=20, padx=20)
+        header.pack(pady=15, padx=20)
+
+        # Scrollable frame for settings
+        scroll_frame = ctk.CTkScrollableFrame(dialog, height=380)
+        scroll_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
 
         # Hourly Rate Setting
-        hourly_frame = ctk.CTkFrame(dialog)
-        hourly_frame.pack(pady=10, padx=20, fill="x")
+        hourly_frame = ctk.CTkFrame(scroll_frame)
+        hourly_frame.pack(pady=8, padx=10, fill="x")
 
         hourly_label = ctk.CTkLabel(
             hourly_frame,
             text="Hourly Labor Rate (per person):",
-            font=ctk.CTkFont(size=14)
+            font=ctk.CTkFont(size=12, weight="bold")
         )
-        hourly_label.pack(pady=(10, 5), padx=15, anchor="w")
+        hourly_label.pack(pady=(8, 3), padx=10, anchor="w")
 
         hourly_entry = ctk.CTkEntry(
             hourly_frame,
             placeholder_text="e.g., 25.00",
-            height=35
+            height=30
         )
-        hourly_entry.pack(pady=5, padx=15, fill="x")
+        hourly_entry.pack(pady=3, padx=10, fill="x")
 
         # Load current value
         current_rate = self.db.get_hourly_rate()
@@ -3023,19 +3068,117 @@ OCR Scanning Instructions (To be implemented):
         help_text = ctk.CTkLabel(
             hourly_frame,
             text="Labor cost = (visit time in hours) × 2 crew members × hourly rate",
-            font=ctk.CTkFont(size=10),
+            font=ctk.CTkFont(size=9),
             text_color="gray"
         )
-        help_text.pack(pady=(0, 10), padx=15)
+        help_text.pack(pady=(0, 8), padx=10)
+
+        # PDF Export Path Setting
+        pdf_frame = ctk.CTkFrame(scroll_frame)
+        pdf_frame.pack(pady=8, padx=10, fill="x")
+
+        pdf_label = ctk.CTkLabel(
+            pdf_frame,
+            text="PDF Export Directory:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        pdf_label.pack(pady=(8, 3), padx=10, anchor="w")
+
+        pdf_path_frame = ctk.CTkFrame(pdf_frame, fg_color="transparent")
+        pdf_path_frame.pack(pady=3, padx=10, fill="x")
+
+        pdf_entry = ctk.CTkEntry(
+            pdf_path_frame,
+            placeholder_text="Select directory for PDF exports",
+            height=30
+        )
+        pdf_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+
+        # Load current value
+        current_pdf_path = self.db.get_setting('pdf_export_path', '')
+        if current_pdf_path:
+            pdf_entry.insert(0, current_pdf_path)
+
+        def browse_pdf_path():
+            path = filedialog.askdirectory(title="Select PDF Export Directory")
+            if path:
+                pdf_entry.delete(0, tk.END)
+                pdf_entry.insert(0, path)
+
+        browse_btn = ctk.CTkButton(
+            pdf_path_frame,
+            text="Browse",
+            command=browse_pdf_path,
+            width=80,
+            height=30,
+            font=ctk.CTkFont(size=10)
+        )
+        browse_btn.pack(side="right")
+
+        pdf_help = ctk.CTkLabel(
+            pdf_frame,
+            text="Directory where exported PDF reports will be saved",
+            font=ctk.CTkFont(size=9),
+            text_color="gray"
+        )
+        pdf_help.pack(pady=(0, 8), padx=10)
+
+        # Color Theme Setting
+        theme_frame = ctk.CTkFrame(scroll_frame)
+        theme_frame.pack(pady=8, padx=10, fill="x")
+
+        theme_label = ctk.CTkLabel(
+            theme_frame,
+            text="Color Theme:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        theme_label.pack(pady=(8, 3), padx=10, anchor="w")
+
+        current_theme = self.db.get_setting('color_theme', 'blue')
+        theme_var = tk.StringVar(value=current_theme)
+
+        theme_options = ["blue", "dark-blue", "green"]
+        theme_menu = ctk.CTkOptionMenu(
+            theme_frame,
+            variable=theme_var,
+            values=theme_options,
+            height=30,
+            font=ctk.CTkFont(size=11)
+        )
+        theme_menu.pack(pady=3, padx=10, fill="x")
+
+        theme_help = ctk.CTkLabel(
+            theme_frame,
+            text="Changes will apply after restarting the application",
+            font=ctk.CTkFont(size=9),
+            text_color="gray"
+        )
+        theme_help.pack(pady=(0, 8), padx=10)
 
         def save_settings():
             try:
+                # Validate and save hourly rate
                 new_rate = float(hourly_entry.get())
                 if new_rate <= 0:
                     messagebox.showerror("Error", "Hourly rate must be greater than 0")
                     return
                 self.db.set_hourly_rate(new_rate)
-                messagebox.showinfo("Success", "Settings saved successfully!")
+
+                # Save PDF export path
+                pdf_path = pdf_entry.get().strip()
+                self.db.set_setting('pdf_export_path', pdf_path)
+
+                # Save color theme
+                new_theme = theme_var.get()
+                self.db.set_setting('color_theme', new_theme)
+
+                # Apply theme immediately
+                if new_theme != current_theme:
+                    ctk.set_default_color_theme(new_theme)
+                    messagebox.showinfo("Success", "Settings saved! Color theme will fully apply after restart.")
+                else:
+                    messagebox.showinfo("Success", "Settings saved successfully!")
+
                 self.refresh_dashboard()  # Refresh dashboard to show updated calculations
                 dialog.destroy()
             except ValueError:
@@ -3043,23 +3186,23 @@ OCR Scanning Instructions (To be implemented):
 
         # Buttons
         button_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        button_frame.pack(pady=20, padx=20, fill="x")
+        button_frame.pack(pady=10, padx=20, fill="x")
 
         save_btn = ctk.CTkButton(
             button_frame,
             text="Save",
             command=save_settings,
-            font=ctk.CTkFont(size=12),
-            height=35
+            font=ctk.CTkFont(size=11),
+            height=32
         )
-        save_btn.pack(side="left", padx=(0, 10), expand=True, fill="x")
+        save_btn.pack(side="left", padx=(0, 8), expand=True, fill="x")
 
         cancel_btn = ctk.CTkButton(
             button_frame,
             text="Cancel",
             command=dialog.destroy,
-            font=ctk.CTkFont(size=12),
-            height=35,
+            font=ctk.CTkFont(size=11),
+            height=32,
             fg_color="gray"
         )
         cancel_btn.pack(side="left", expand=True, fill="x")
