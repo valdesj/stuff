@@ -832,76 +832,212 @@ class LandscapingApp(ctk.CTk):
             text="Materials & Services for this Client",
             font=ctk.CTkFont(size=16, weight="bold")
         )
-        materials_header.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(20, 10))
+        materials_header.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(20, 5))
         row += 1
 
-        # Materials list
-        client_materials = self.db.get_client_materials(client_id)
+        # Create materials table frame
+        table_frame = ctk.CTkFrame(self.client_details_frame)
+        table_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
+        table_frame.grid_columnconfigure(0, weight=2)  # Material name
+        table_frame.grid_columnconfigure(1, weight=1)  # Cost
+        table_frame.grid_columnconfigure(2, weight=1)  # Unit
+        table_frame.grid_columnconfigure(3, weight=0)  # Remove button
 
-        if client_materials:
-            for mat in client_materials:
-                mat_frame = ctk.CTkFrame(self.client_details_frame)
-                mat_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
-                mat_frame.grid_columnconfigure(1, weight=1)
-
-                # Material name and multiplier
-                name_text = mat['name']
-                if mat['multiplier'] > 1:
-                    name_text += f" (×{mat['multiplier']:.0f})"
-
-                name_lbl = ctk.CTkLabel(
-                    mat_frame,
-                    text=name_text,
-                    font=ctk.CTkFont(size=13, weight="bold")
-                )
-                name_lbl.grid(row=0, column=0, sticky="w", padx=10, pady=10)
-
-                # Cost display
-                cost_text = f"${mat['effective_cost']:.2f}"
-                if mat['multiplier'] > 1:
-                    cost_text += f" × {mat['multiplier']:.0f} = ${mat['total_cost']:.2f}"
-
-                if mat['is_global']:
-                    cost_text += " (Global)"
-                else:
-                    cost_text += " (Custom)"
-
-                cost_lbl = ctk.CTkLabel(
-                    mat_frame,
-                    text=cost_text,
-                    font=ctk.CTkFont(size=11)
-                )
-                cost_lbl.grid(row=0, column=1, sticky="e", padx=10, pady=10)
-
-                remove_btn = ctk.CTkButton(
-                    mat_frame,
-                    text="Remove",
-                    command=lambda m=mat: self.remove_client_material(client_id, m['material_id']),
-                    width=80,
-                    height=30,
-                    fg_color="red"
-                )
-                remove_btn.grid(row=0, column=2, padx=10, pady=10)
-                row += 1
-        else:
-            no_mat = ctk.CTkLabel(
-                self.client_details_frame,
-                text="No materials assigned yet",
-                font=ctk.CTkFont(size=13),
+        # Table headers
+        header_row = 0
+        headers = ["Material/Service", "Cost ($)", "Unit", ""]
+        for col, header_text in enumerate(headers):
+            header = ctk.CTkLabel(
+                table_frame,
+                text=header_text,
+                font=ctk.CTkFont(size=11, weight="bold"),
                 text_color="gray"
             )
-            no_mat.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=5)
-            row += 1
+            header.grid(row=header_row, column=col, padx=5, pady=3, sticky="w")
 
-        # Add material button
-        add_mat_btn = ctk.CTkButton(
-            self.client_details_frame,
-            text="+ Add Material/Service",
-            command=lambda: self.add_material_to_client(client_id),
-            font=ctk.CTkFont(size=14),
-            height=40
+        # Store material rows for later reference
+        self.material_rows = []
+        current_row = 1
+
+        # Get existing materials
+        client_materials = self.db.get_client_materials(client_id)
+        all_materials = self.db.get_all_materials()
+
+        # Display existing materials as table rows
+        for mat in client_materials:
+            self.add_material_table_row(table_frame, current_row, client_id, all_materials, mat)
+            current_row += 1
+
+        # Add empty row for adding new material
+        self.add_material_table_row(table_frame, current_row, client_id, all_materials, None)
+        current_row += 1
+
+        # Add row button
+        add_row_btn = ctk.CTkButton(
+            table_frame,
+            text="+ Add Another Row",
+            command=lambda: self.add_another_material_row(table_frame, client_id, all_materials),
+            font=ctk.CTkFont(size=11),
+            height=28,
+            fg_color="transparent",
+            hover_color="#3a3a3a"
         )
-        add_mat_btn.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        add_row_btn.grid(row=current_row, column=0, columnspan=4, sticky="w", padx=5, pady=5)
+
+        row += 1
+
+    def add_material_table_row(self, parent, row_num, client_id, all_materials, existing_material=None):
+        """Add a row to the materials table."""
+        # Get materials not already assigned (unless this is the existing material)
+        client_materials = self.db.get_client_materials(client_id)
+        assigned_ids = {m['material_id'] for m in client_materials if not existing_material or m['material_id'] != existing_material['material_id']}
+        available_materials = [m for m in all_materials if m['id'] not in assigned_ids or (existing_material and m['id'] == existing_material['material_id'])]
+
+        if not available_materials and not existing_material:
+            return  # No materials to add
+
+        # Material dropdown
+        material_names = [m['name'] for m in available_materials]
+        selected_material = existing_material['name'] if existing_material else (material_names[0] if material_names else "")
+
+        material_var = tk.StringVar(value=selected_material)
+        material_dropdown = ctk.CTkOptionMenu(
+            parent,
+            variable=material_var,
+            values=material_names if material_names else ["No materials available"],
+            font=ctk.CTkFont(size=11),
+            height=28,
+            dynamic_resizing=False
+        )
+        material_dropdown.grid(row=row_num, column=0, padx=5, pady=3, sticky="ew")
+
+        # Cost entry
+        cost_entry = ctk.CTkEntry(
+            parent,
+            placeholder_text="Auto",
+            font=ctk.CTkFont(size=11),
+            height=28
+        )
+        cost_entry.grid(row=row_num, column=1, padx=5, pady=3, sticky="ew")
+
+        if existing_material and existing_material.get('custom_cost'):
+            cost_entry.insert(0, str(existing_material['custom_cost']))
+
+        # Unit entry
+        unit_entry = ctk.CTkEntry(
+            parent,
+            placeholder_text="1",
+            font=ctk.CTkFont(size=11),
+            height=28,
+            width=60
+        )
+        unit_entry.grid(row=row_num, column=2, padx=5, pady=3, sticky="ew")
+
+        if existing_material:
+            unit_entry.delete(0, tk.END)
+            unit_entry.insert(0, str(existing_material.get('multiplier', 1)))
+
+        # Auto-update cost when material selection changes
+        def on_material_change(*args):
+            selected_name = material_var.get()
+            selected_mat = next((m for m in all_materials if m['name'] == selected_name), None)
+            if selected_mat:
+                # If cost field is empty or shows default, update it
+                current_cost = cost_entry.get().strip()
+                if not current_cost or current_cost == "Auto":
+                    cost_entry.delete(0, tk.END)
+                    cost_entry.configure(placeholder_text=f"{selected_mat['default_cost']:.2f}")
+
+        material_var.trace('w', on_material_change)
+        on_material_change()  # Set initial placeholder
+
+        # Save/Remove button
+        if existing_material:
+            # Remove button for existing materials
+            remove_btn = ctk.CTkButton(
+                parent,
+                text="✕",
+                command=lambda: self.remove_material_from_table(client_id, existing_material['material_id'], parent, row_num),
+                font=ctk.CTkFont(size=12),
+                width=40,
+                height=28,
+                fg_color="red",
+                hover_color="#cc0000"
+            )
+            remove_btn.grid(row=row_num, column=3, padx=5, pady=3)
+        else:
+            # Save button for new materials
+            save_btn = ctk.CTkButton(
+                parent,
+                text="Save",
+                command=lambda: self.save_material_from_table(client_id, material_var, cost_entry, unit_entry, parent, row_num),
+                font=ctk.CTkFont(size=11),
+                width=60,
+                height=28,
+                fg_color="green"
+            )
+            save_btn.grid(row=row_num, column=3, padx=5, pady=3)
+
+        # Store row reference
+        self.material_rows.append({
+            'row_num': row_num,
+            'material_var': material_var,
+            'cost_entry': cost_entry,
+            'unit_entry': unit_entry,
+            'existing': existing_material
+        })
+
+    def save_material_from_table(self, client_id, material_var, cost_entry, unit_entry, parent, row_num):
+        """Save a material from the table."""
+        selected_name = material_var.get()
+        if not selected_name or selected_name == "No materials available":
+            messagebox.showerror("Error", "Please select a material/service")
+            return
+
+        # Get the material
+        all_materials = self.db.get_all_materials()
+        selected_material = next((m for m in all_materials if m['name'] == selected_name), None)
+
+        if not selected_material:
+            return
+
+        # Get cost
+        cost_str = cost_entry.get().strip()
+        custom_cost = None
+        if cost_str and cost_str != "Auto":
+            try:
+                custom_cost = float(cost_str)
+            except ValueError:
+                messagebox.showerror("Error", "Cost must be a valid number")
+                return
+
+        # Get unit/multiplier
+        unit_str = unit_entry.get().strip()
+        try:
+            multiplier = float(unit_str) if unit_str else 1.0
+            if multiplier <= 0:
+                messagebox.showerror("Error", "Unit must be greater than 0")
+                return
+        except ValueError:
+            messagebox.showerror("Error", "Unit must be a valid number")
+            return
+
+        # Save to database
+        self.db.add_client_material(client_id, selected_material['id'], custom_cost, multiplier)
+
+        # Refresh the client details to show updated table
+        self.show_client_details(client_id)
+
+    def remove_material_from_table(self, client_id, material_id, parent, row_num):
+        """Remove a material from the table."""
+        self.db.remove_client_material(client_id, material_id)
+        # Refresh the client details
+        self.show_client_details(client_id)
+
+    def add_another_material_row(self, parent, client_id, all_materials):
+        """Add another empty row to the materials table."""
+        # Just refresh the client details which will add a new empty row
+        self.show_client_details(client_id)
 
     def add_new_client(self):
         """Open dialog to add a new client."""
