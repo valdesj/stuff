@@ -608,36 +608,14 @@ class LandscapingApp(ctk.CTk):
         )
         inactive_check.grid(row=1, column=0, sticky="w", padx=12, pady=3)
 
-        # Client listbox with scrollbar
-        listbox_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
-        listbox_frame.grid(row=2, column=0, sticky="nsew", padx=8, pady=(3, 8))
-        listbox_frame.grid_columnconfigure(0, weight=1)
-        listbox_frame.grid_rowconfigure(0, weight=1)
+        # Client list with button-style items
+        self.clients_scroll_frame = ctk.CTkScrollableFrame(left_frame)
+        self.clients_scroll_frame.grid(row=2, column=0, sticky="nsew", padx=8, pady=(3, 8))
+        self.clients_scroll_frame.grid_columnconfigure(0, weight=1)
 
-        # Scrollbar
-        scrollbar = ctk.CTkScrollbar(listbox_frame)
-        scrollbar.grid(row=0, column=1, sticky="ns")
-
-        # Listbox
-        self.clients_listbox = tk.Listbox(
-            listbox_frame,
-            font=("Arial", 28),
-            selectmode=tk.SINGLE,
-            yscrollcommand=scrollbar.set,
-            bg="#2b2b2b",
-            fg="white",
-            selectbackground="#1f6aa5",
-            selectforeground="white",
-            relief="flat",
-            borderwidth=0,
-            highlightthickness=1,
-            highlightbackground="#404040",
-            highlightcolor="#1f6aa5",
-            activestyle="none"
-        )
-        self.clients_listbox.grid(row=0, column=0, sticky="nsew")
-        scrollbar.configure(command=self.clients_listbox.yview)
-        self.clients_listbox.bind('<<ListboxSelect>>', self.on_client_select)
+        # Track selected client button
+        self.selected_client_button = None
+        self.client_buttons = []
 
         # Add client button
         add_btn = ctk.CTkButton(
@@ -684,29 +662,61 @@ class LandscapingApp(ctk.CTk):
         placeholder.grid(row=0, column=0, pady=50)
 
     def refresh_clients_list(self):
-        """Refresh the clients listbox."""
-        self.clients_listbox.delete(0, tk.END)
+        """Refresh the clients list with button-style items."""
+        # Clear existing buttons
+        for widget in self.clients_scroll_frame.winfo_children():
+            widget.destroy()
+
+        self.client_buttons = []
+        self.selected_client_button = None
+
         active_only = not self.show_inactive_var.get()
         clients = self.db.get_all_clients(active_only=active_only)
-
-        for client in clients:
-            display_name = client['name']
-            if not client['is_active']:
-                display_name += " (Inactive)"
-            self.clients_listbox.insert(tk.END, display_name)
 
         # Store client IDs for reference
         self.client_ids = [c['id'] for c in clients]
 
-    def on_client_select(self, event):
-        """Handle client selection from listbox."""
-        selection = self.clients_listbox.curselection()
-        if not selection:
-            return
+        # Create button for each client
+        for idx, client in enumerate(clients):
+            display_name = client['name']
+            if not client['is_active']:
+                display_name += " (Inactive)"
 
-        idx = selection[0]
-        self.current_client_id = self.client_ids[idx]
-        self.show_client_details(self.current_client_id)
+            def create_click_handler(client_id, button):
+                def handler():
+                    self.on_client_button_click(client_id, button)
+                return handler
+
+            btn = ctk.CTkButton(
+                self.clients_scroll_frame,
+                text=display_name,
+                font=ctk.CTkFont(size=20),
+                height=60,
+                corner_radius=8,
+                fg_color="#3a3a3a",
+                hover_color="#4a4a4a",
+                text_color="white",
+                anchor="w"
+            )
+            btn.grid(row=idx, column=0, sticky="ew", padx=5, pady=5)
+
+            # Store reference and set click handler
+            self.client_buttons.append(btn)
+            btn.configure(command=create_click_handler(client['id'], btn))
+
+    def on_client_button_click(self, client_id, button):
+        """Handle client button click."""
+        # Reset previous selection
+        if self.selected_client_button:
+            self.selected_client_button.configure(fg_color="#3a3a3a")
+
+        # Highlight selected button
+        button.configure(fg_color="#1f6aa5")
+        self.selected_client_button = button
+
+        # Show client details
+        self.show_client_details(client_id)
+        self.current_client_id = client_id
 
     def show_client_details(self, client_id: int):
         """Display detailed information for a selected client."""
