@@ -437,14 +437,23 @@ class LandscapingApp(ctk.CTk):
                 mat_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
                 mat_frame.grid_columnconfigure(1, weight=1)
 
+                # Material name and multiplier
+                name_text = mat['name']
+                if mat['multiplier'] > 1:
+                    name_text += f" (×{mat['multiplier']:.0f})"
+
                 name_lbl = ctk.CTkLabel(
                     mat_frame,
-                    text=mat['name'],
+                    text=name_text,
                     font=ctk.CTkFont(size=13, weight="bold")
                 )
                 name_lbl.grid(row=0, column=0, sticky="w", padx=10, pady=10)
 
+                # Cost display
                 cost_text = f"${mat['effective_cost']:.2f}"
+                if mat['multiplier'] > 1:
+                    cost_text += f" × {mat['multiplier']:.0f} = ${mat['total_cost']:.2f}"
+
                 if mat['is_global']:
                     cost_text += " (Global)"
                 else:
@@ -453,7 +462,7 @@ class LandscapingApp(ctk.CTk):
                 cost_lbl = ctk.CTkLabel(
                     mat_frame,
                     text=cost_text,
-                    font=ctk.CTkFont(size=13)
+                    font=ctk.CTkFont(size=11)
                 )
                 cost_lbl.grid(row=0, column=1, sticky="e", padx=10, pady=10)
 
@@ -628,15 +637,15 @@ class LandscapingApp(ctk.CTk):
         """Open dialog to add a material/service to a client."""
         dialog = ctk.CTkToplevel(self)
         dialog.title("Add Material/Service to Client")
-        dialog.geometry("500x400")
+        dialog.geometry("500x500")
         dialog.transient(self)
         dialog.grab_set()
 
         # Center the dialog
         dialog.update_idletasks()
         x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
-        y = (dialog.winfo_screenheight() // 2) - (400 // 2)
-        dialog.geometry(f"500x400+{x}+{y}")
+        y = (dialog.winfo_screenheight() // 2) - (500 // 2)
+        dialog.geometry(f"500x500+{x}+{y}")
 
         header = ctk.CTkLabel(
             dialog,
@@ -699,6 +708,30 @@ class LandscapingApp(ctk.CTk):
 
         custom_check.configure(command=toggle_cost_entry)
 
+        # Multiplier option
+        multiplier_label = ctk.CTkLabel(
+            dialog,
+            text="Multiplier (how many times this material is applied):",
+            font=ctk.CTkFont(size=12)
+        )
+        multiplier_label.pack(pady=(15, 5))
+
+        multiplier_entry = ctk.CTkEntry(
+            dialog,
+            placeholder_text="Default: 1",
+            height=35
+        )
+        multiplier_entry.insert(0, "1")
+        multiplier_entry.pack(pady=5, padx=20, fill="x")
+
+        help_label = ctk.CTkLabel(
+            dialog,
+            text="Example: Fertilizer applied 3 times → enter 3",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        help_label.pack(pady=(0, 10))
+
         def save_material():
             selected_name = material_var.get()
             selected_material = next(m for m in available_materials if m['name'] == selected_name)
@@ -711,7 +744,17 @@ class LandscapingApp(ctk.CTk):
                     messagebox.showerror("Error", "Custom cost must be a valid number")
                     return
 
-            self.db.add_client_material(client_id, selected_material['id'], custom_cost)
+            # Get multiplier
+            try:
+                multiplier = float(multiplier_entry.get())
+                if multiplier <= 0:
+                    messagebox.showerror("Error", "Multiplier must be greater than 0")
+                    return
+            except ValueError:
+                messagebox.showerror("Error", "Multiplier must be a valid number")
+                return
+
+            self.db.add_client_material(client_id, selected_material['id'], custom_cost, multiplier)
             messagebox.showinfo("Success", "Material added to client!")
             dialog.destroy()
             self.show_client_details(client_id)

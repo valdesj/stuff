@@ -65,6 +65,7 @@ class Database:
                 client_id INTEGER NOT NULL,
                 material_id INTEGER NOT NULL,
                 custom_cost REAL,
+                multiplier REAL NOT NULL DEFAULT 1.0,
                 is_enabled INTEGER NOT NULL DEFAULT 1,
                 FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
                 FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE,
@@ -72,6 +73,12 @@ class Database:
             )
         """)
 
+        # Add multiplier column to existing tables (migration)
+        try:
+            cursor.execute("ALTER TABLE client_materials ADD COLUMN multiplier REAL NOT NULL DEFAULT 1.0")
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
         # Visits table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS visits (
@@ -213,13 +220,13 @@ class Database:
 
     # ==================== CLIENT MATERIAL OPERATIONS ====================
 
-    def add_client_material(self, client_id: int, material_id: int, custom_cost: Optional[float] = None):
-        """Associate a material with a client, optionally with custom pricing."""
+    def add_client_material(self, client_id: int, material_id: int, custom_cost: Optional[float] = None, multiplier: float = 1.0):
+        """Associate a material with a client, optionally with custom pricing and multiplier."""
         cursor = self.connection.cursor()
         cursor.execute("""
-            INSERT OR REPLACE INTO client_materials (client_id, material_id, custom_cost)
-            VALUES (?, ?, ?)
-        """, (client_id, material_id, custom_cost))
+            INSERT OR REPLACE INTO client_materials (client_id, material_id, custom_cost, multiplier)
+            VALUES (?, ?, ?, ?)
+        """, (client_id, material_id, custom_cost, multiplier))
         self.connection.commit()
 
     def get_client_materials(self, client_id: int) -> List[Dict]:
@@ -227,9 +234,10 @@ class Database:
         cursor = self.connection.cursor()
         cursor.execute("""
             SELECT
-                cm.id, cm.client_id, cm.material_id, cm.custom_cost, cm.is_enabled,
+                cm.id, cm.client_id, cm.material_id, cm.custom_cost, cm.multiplier, cm.is_enabled,
                 m.name, m.default_cost, m.unit, m.is_global, m.description,
-                COALESCE(cm.custom_cost, m.default_cost) as effective_cost
+                COALESCE(cm.custom_cost, m.default_cost) as effective_cost,
+                COALESCE(cm.custom_cost, m.default_cost) * cm.multiplier as total_cost
             FROM client_materials cm
             JOIN materials m ON cm.material_id = m.id
             WHERE cm.client_id = ? AND cm.is_enabled = 1
