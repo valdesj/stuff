@@ -1916,6 +1916,17 @@ OCR Scanning Instructions (To be implemented):
             visit_frame.pack(fill="x", pady=8, padx=5)
             visit_frame.grid_columnconfigure(1, weight=1)
 
+            # Skip checkbox at the top
+            skip_var = tk.BooleanVar(value=False)
+            skip_check = ctk.CTkCheckBox(
+                visit_frame,
+                text="Skip this entry (don't import)",
+                variable=skip_var,
+                font=ctk.CTkFont(size=10),
+                text_color="gray"
+            )
+            skip_check.grid(row=0, column=0, columnspan=2, sticky="e", padx=8, pady=(6, 0))
+
             # Row number and client name
             header_text = f"Error #{idx+1} - {visit['client_name']}"
             header_label = ctk.CTkLabel(
@@ -1923,7 +1934,7 @@ OCR Scanning Instructions (To be implemented):
                 text=header_text,
                 font=ctk.CTkFont(size=12, weight="bold")
             )
-            header_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(8, 4))
+            header_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=8, pady=(4, 4))
 
             # Error message
             error_label = ctk.CTkLabel(
@@ -1933,10 +1944,10 @@ OCR Scanning Instructions (To be implemented):
                 text_color="red",
                 wraplength=850
             )
-            error_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 8))
+            error_label.grid(row=2, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 8))
 
             # Editable fields
-            row_num = 2
+            row_num = 3
 
             # Date field - format as MM/DD/YYYY
             date_label = ctk.CTkLabel(visit_frame, text="Date (MM/DD/YYYY):", font=ctk.CTkFont(size=11))
@@ -1974,12 +1985,65 @@ OCR Scanning Instructions (To be implemented):
             end_entry.grid(row=row_num, column=1, sticky="w", padx=8, pady=4)
             row_num += 1
 
+            # Create validation function for this specific visit
+            def create_validator(frame, d_entry, s_entry, e_entry):
+                def validate(*args):
+                    """Validate the visit data and update border color."""
+                    date_str = d_entry.get().strip()
+                    start_str = s_entry.get().strip()
+                    end_str = e_entry.get().strip()
+
+                    # Validate date
+                    date_valid = False
+                    try:
+                        datetime.strptime(date_str, '%m/%d/%Y')
+                        date_valid = True
+                    except:
+                        try:
+                            datetime.strptime(date_str, '%Y-%m-%d')
+                            date_valid = True
+                        except:
+                            pass
+
+                    # Validate times
+                    times_valid = False
+                    if date_valid:
+                        try:
+                            for fmt in ['%I:%M %p', '%I:%M%p', '%H:%M']:
+                                try:
+                                    start_obj = datetime.strptime(start_str, fmt)
+                                    end_obj = datetime.strptime(end_str, fmt)
+                                    duration = (end_obj - start_obj).total_seconds() / 60
+                                    if duration > 0:
+                                        times_valid = True
+                                        break
+                                except:
+                                    continue
+                        except:
+                            pass
+
+                    # Update border color
+                    if date_valid and times_valid:
+                        frame.configure(border_color="green")
+                    else:
+                        frame.configure(border_color="red")
+
+                return validate
+
+            # Bind validation to field changes
+            validator = create_validator(visit_frame, date_entry, start_entry, end_entry)
+            date_entry.bind('<KeyRelease>', validator)
+            start_entry.bind('<KeyRelease>', validator)
+            end_entry.bind('<KeyRelease>', validator)
+
             # Store editable fields
             self.editable_visits.append({
                 'client_name': visit['client_name'],
                 'date_entry': date_entry,
                 'start_entry': start_entry,
                 'end_entry': end_entry,
+                'skip_var': skip_var,
+                'frame': visit_frame,
                 'notes': visit.get('notes', ''),
                 'original_error': True
             })
@@ -2038,8 +2102,14 @@ OCR Scanning Instructions (To be implemented):
         # Validate and collect edited visit data
         validated_visits = []
         validation_errors = []
+        skipped_count = 0
 
         for idx, visit_data in enumerate(self.editable_visits):
+            # Skip this visit if the skip checkbox is checked
+            if visit_data.get('skip_var') and visit_data['skip_var'].get():
+                skipped_count += 1
+                continue
+
             try:
                 date_str = visit_data['date_entry'].get().strip()
                 start_str = visit_data['start_entry'].get().strip()
@@ -2118,14 +2188,16 @@ OCR Scanning Instructions (To be implemented):
         import_errors_as_review = getattr(self, 'import_errors_var', None)
         import_errors_as_review = import_errors_as_review.get() if import_errors_as_review else False
 
+        # Build confirmation message
+        confirm_msg = f"This will import:\n"
+        confirm_msg += f"• {len(preview_results.get('clients', []))} clients\n"
+        confirm_msg += f"• {len(validated_visits)} visits\n"
+        if skipped_count > 0:
+            confirm_msg += f"• {skipped_count} visits skipped\n"
+        confirm_msg += f"\nContinue?"
+
         # Confirm import with corrected data
-        if messagebox.askyesno(
-            "Confirm Import",
-            f"This will import:\n"
-            f"• {len(preview_results.get('clients', []))} clients\n"
-            f"• {len(validated_visits)} visits\n\n"
-            f"Continue?"
-        ):
+        if messagebox.askyesno("Confirm Import", confirm_msg):
             dialog.destroy()
             # Update preview_results with validated visits
             preview_results['visits'] = validated_visits
