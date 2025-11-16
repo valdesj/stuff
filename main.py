@@ -1088,10 +1088,35 @@ class LandscapingApp(ctk.CTk):
 
     def add_another_material_row(self):
         """Add another empty row to the materials table."""
-        # Get current client materials from database
-        client_materials = self.db.get_client_materials(self.current_client_id)
-        # Rebuild table with one more empty row
-        self.rebuild_materials_table(client_materials, self.num_empty_rows + 1)
+        # Simply increment the counter and add one more row without rebuilding everything
+        self.num_empty_rows += 1
+
+        # Find the next row number (before the buttons)
+        next_row = len(self.material_rows) + 1  # +1 for header
+
+        # Remove the add button and save button from grid temporarily
+        add_btn = None
+        save_btn = None
+        for widget in self.materials_table_frame.winfo_children():
+            if isinstance(widget, ctk.CTkButton):
+                text = widget.cget("text")
+                if "Add Another Row" in text:
+                    add_btn = widget
+                    widget.grid_forget()
+                elif "Save Changes" in text:
+                    save_btn = widget
+                    widget.grid_forget()
+
+        # Add the new empty row
+        self.add_material_row_to_table(next_row, None)
+
+        # Re-grid the buttons
+        next_row += 1
+        if add_btn:
+            add_btn.grid(row=next_row, column=0, columnspan=4, sticky="w", padx=5, pady=5)
+        next_row += 1
+        if save_btn:
+            save_btn.grid(row=next_row, column=0, columnspan=4, sticky="ew", padx=5, pady=10)
 
     def save_all_material_changes(self):
         """Save all changes in the materials table."""
