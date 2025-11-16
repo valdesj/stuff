@@ -604,17 +604,39 @@ class LandscapingApp(ctk.CTk):
             text="Show Inactive Clients",
             variable=self.show_inactive_var,
             command=self.refresh_clients_list,
-            font=ctk.CTkFont(size=13)
+            font=ctk.CTkFont(size=11)
         )
-        inactive_check.grid(row=1, column=0, sticky="w", padx=15, pady=5)
+        inactive_check.grid(row=1, column=0, sticky="w", padx=12, pady=3)
 
-        # Client listbox
+        # Client listbox with scrollbar
+        listbox_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
+        listbox_frame.grid(row=2, column=0, sticky="nsew", padx=8, pady=(3, 8))
+        listbox_frame.grid_columnconfigure(0, weight=1)
+        listbox_frame.grid_rowconfigure(0, weight=1)
+
+        # Scrollbar
+        scrollbar = ctk.CTkScrollbar(listbox_frame)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+
+        # Listbox
         self.clients_listbox = tk.Listbox(
-            left_frame,
-            font=("Arial", 13),
-            selectmode=tk.SINGLE
+            listbox_frame,
+            font=("Arial", 11),
+            selectmode=tk.SINGLE,
+            yscrollcommand=scrollbar.set,
+            bg="#2b2b2b",
+            fg="white",
+            selectbackground="#1f6aa5",
+            selectforeground="white",
+            relief="flat",
+            borderwidth=0,
+            highlightthickness=1,
+            highlightbackground="#404040",
+            highlightcolor="#1f6aa5",
+            activestyle="none"
         )
-        self.clients_listbox.grid(row=2, column=0, sticky="nsew", padx=15, pady=(5, 10))
+        self.clients_listbox.grid(row=0, column=0, sticky="nsew")
+        scrollbar.configure(command=self.clients_listbox.yview)
         self.clients_listbox.bind('<<ListboxSelect>>', self.on_client_select)
 
         # Add client button
@@ -622,10 +644,10 @@ class LandscapingApp(ctk.CTk):
             left_frame,
             text="+ Add New Client",
             command=self.add_new_client,
-            font=ctk.CTkFont(size=14),
-            height=40
+            font=ctk.CTkFont(size=12),
+            height=35
         )
-        add_btn.grid(row=3, column=0, sticky="ew", padx=15, pady=(0, 15))
+        add_btn.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 12))
 
         # Right side - Client details and materials
         right_frame = ctk.CTkFrame(self.tab_clients)
@@ -672,7 +694,6 @@ class LandscapingApp(ctk.CTk):
             if not client['is_active']:
                 display_name += " (Inactive)"
             self.clients_listbox.insert(tk.END, display_name)
-            self.clients_listbox.itemconfig(tk.END, {'selectbackground': '#1f6aa5'})
 
         # Store client IDs for reference
         self.client_ids = [c['id'] for c in clients]
