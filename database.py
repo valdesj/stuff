@@ -429,14 +429,15 @@ class Database:
         """, (client_id, str(current_year)))
         visits_this_year = cursor.fetchone()['visit_count']
 
-        # Get configured materials/services cost per visit for this client
+        # Get configured materials/services yearly cost for this client
+        # This is the total cost based on cost × multiplier for all configured materials
         cursor.execute("""
             SELECT COALESCE(SUM(COALESCE(cm.custom_cost, m.default_cost) * cm.multiplier), 0) as configured_cost
             FROM client_materials cm
             JOIN materials m ON cm.material_id = m.id
             WHERE cm.client_id = ? AND cm.is_enabled = 1
         """, (client_id,))
-        configured_materials_cost_per_visit = cursor.fetchone()['configured_cost']
+        configured_materials_cost_yearly = cursor.fetchone()['configured_cost']
 
         # Get total material costs from actual visits (materials only)
         cursor.execute("""
@@ -485,13 +486,13 @@ class Database:
         total_cost = total_labor_cost + total_materials_services_cost
         avg_cost_per_visit = total_cost / visit_count if visit_count > 0 else 0
 
-        # Projected cost per visit using configured materials/services
-        # Labor cost per visit (from avg time) + configured materials cost
+        # Calculate projected yearly costs
+        # Yearly labor cost = avg labor cost per visit × 52 visits
         avg_labor_cost_per_visit = (avg_time_per_visit / 60) * 2 * hourly_rate
-        projected_cost_per_visit = avg_labor_cost_per_visit + configured_materials_cost_per_visit
+        projected_yearly_labor_cost = avg_labor_cost_per_visit * 52
 
-        # Estimated yearly cost = projected cost per visit * 52 visits per year
-        est_yearly_cost = projected_cost_per_visit * 52
+        # Total projected yearly cost = yearly labor + configured materials/services
+        est_yearly_cost = projected_yearly_labor_cost + configured_materials_cost_yearly
 
         # Proposed monthly rate = est yearly cost / 12
         proposed_monthly_rate = est_yearly_cost / 12
@@ -509,13 +510,13 @@ class Database:
             'total_material_cost': round(total_material_cost, 2),
             'total_service_cost': round(total_service_cost, 2),
             'total_materials_services_cost': round(total_materials_services_cost, 2),
-            'configured_materials_cost': round(configured_materials_cost_per_visit, 2),
+            'configured_materials_cost_yearly': round(configured_materials_cost_yearly, 2),
+            'projected_yearly_labor_cost': round(projected_yearly_labor_cost, 2),
             'avg_time_per_visit': round(avg_time_per_visit, 1),
             'min_time_per_visit': round(min_time_per_visit, 1),
             'max_time_per_visit': round(max_time_per_visit, 1),
             'total_labor_cost': round(total_labor_cost, 2),
             'avg_cost_per_visit': round(avg_cost_per_visit, 2),
-            'projected_cost_per_visit': round(projected_cost_per_visit, 2),
             'est_yearly_cost': round(est_yearly_cost, 2),
             'proposed_monthly_rate': round(proposed_monthly_rate, 2),
             'actual_monthly_charge': round(actual_monthly_charge, 2),
