@@ -15,6 +15,9 @@ matplotlib.use('TkAgg')
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.dates as mdates
+import numpy as np
+from scipy.interpolate import make_interp_spline
+from collections import defaultdict
 
 
 # Configure CustomTkinter
@@ -312,12 +315,11 @@ class LandscapingApp(ctk.CTk):
         current_year = datetime.now().year
         visits = self.db.get_client_visits(self.current_viz_client_id)
 
-        # Filter to current year and sort by date
+        # Filter to current year
         visits_this_year = [
             v for v in visits
             if datetime.strptime(v['visit_date'], '%Y-%m-%d').year == current_year
         ]
-        visits_this_year.sort(key=lambda x: x['visit_date'])
 
         if not visits_this_year:
             no_data = ctk.CTkLabel(
@@ -331,43 +333,83 @@ class LandscapingApp(ctk.CTk):
         # Get hourly rate for cost calculation
         hourly_rate = self.db.get_hourly_rate()
 
-        # Prepare data
-        dates = [datetime.strptime(v['visit_date'], '%Y-%m-%d') for v in visits_this_year]
+        # Group visits by month and calculate averages
+        monthly_data = defaultdict(list)
 
-        if self.viz_mode_var.get() == "time":
-            values = [v['duration_minutes'] for v in visits_this_year]
-            ylabel = "Time (minutes)"
-            title = "Time per Visit"
-        else:  # cost mode
-            # Cost = (time in hours * 2 crew * hourly_rate) + materials
-            values = []
-            for visit in visits_this_year:
+        for visit in visits_this_year:
+            visit_date = datetime.strptime(visit['visit_date'], '%Y-%m-%d')
+            month_key = visit_date.replace(day=1)  # First day of month as key
+
+            if self.viz_mode_var.get() == "time":
+                monthly_data[month_key].append(visit['duration_minutes'])
+            else:  # cost mode
                 labor_cost = (visit['duration_minutes'] / 60) * 2 * hourly_rate
-                # Get materials for this visit
                 visit_materials = self.db.get_visit_materials(visit['id'])
                 material_cost = sum(vm['quantity'] * vm['cost_at_time'] for vm in visit_materials)
                 total_cost = labor_cost + material_cost
-                values.append(total_cost)
-            ylabel = "Cost ($)"
-            title = "Cost per Visit"
+                monthly_data[month_key].append(total_cost)
+
+        # Calculate monthly averages
+        months = sorted(monthly_data.keys())
+        averages = [np.mean(monthly_data[month]) for month in months]
+
+        if len(months) == 0:
+            no_data = ctk.CTkLabel(
+                self.viz_canvas_frame,
+                text="No data available",
+                font=ctk.CTkFont(size=11)
+            )
+            no_data.pack(pady=20)
+            return
+
+        # Set labels
+        if self.viz_mode_var.get() == "time":
+            ylabel = "Avg Time (minutes)"
+            title = "Average Time per Visit by Month"
+        else:
+            ylabel = "Avg Cost ($)"
+            title = "Average Cost per Visit by Month"
 
         # Create matplotlib figure
         fig = Figure(figsize=(8, 3), dpi=100, facecolor='#2b2b2b')
         ax = fig.add_subplot(111)
         ax.set_facecolor('#2b2b2b')
 
-        # Plot data
-        ax.plot(dates, values, marker='o', linestyle='-', linewidth=2, markersize=4, color='#1f77b4')
-        ax.set_xlabel("Date", fontsize=9, color='white')
+        # Plot with smooth curve if we have enough data points
+        if len(months) >= 3:
+            # Convert dates to numbers for interpolation
+            months_num = mdates.date2num(months)
+
+            # Create smooth curve using spline interpolation
+            months_smooth = np.linspace(months_num.min(), months_num.max(), 300)
+            try:
+                spl = make_interp_spline(months_num, averages, k=min(3, len(months)-1))
+                averages_smooth = spl(months_smooth)
+
+                # Plot smooth curve
+                ax.plot(mdates.num2date(months_smooth), averages_smooth,
+                       linestyle='-', linewidth=2.5, color='#1f77b4', alpha=0.8)
+                # Plot actual data points
+                ax.plot(months, averages, marker='o', linestyle='',
+                       markersize=6, color='#ff7f0e', alpha=0.9, zorder=5)
+            except:
+                # Fallback to regular plot if spline fails
+                ax.plot(months, averages, marker='o', linestyle='-',
+                       linewidth=2, markersize=6, color='#1f77b4')
+        else:
+            # Not enough points for smooth curve, use regular plot
+            ax.plot(months, averages, marker='o', linestyle='-',
+                   linewidth=2, markersize=6, color='#1f77b4')
+
+        ax.set_xlabel("Month", fontsize=9, color='white')
         ax.set_ylabel(ylabel, fontsize=9, color='white')
         ax.set_title(title, fontsize=10, color='white', pad=5)
         ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
         ax.tick_params(colors='white', labelsize=8)
 
-        # Format x-axis dates
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
-        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-        fig.autofmt_xdate(rotation=45, ha='right')
+        # Format x-axis to show month names
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%b'))
+        ax.xaxis.set_major_locator(mdates.MonthLocator())
 
         # Adjust layout
         fig.tight_layout(pad=1.5)
