@@ -13,7 +13,7 @@ from typing import Optional
 
 
 # Configure CustomTkinter
-ctk.set_appearance_mode("light")  # Light mode for older users
+ctk.set_appearance_mode("dark")  # Dark mode
 ctk.set_default_color_theme("blue")
 
 
@@ -637,22 +637,22 @@ class LandscapingApp(ctk.CTk):
         """Open dialog to add a material/service to a client."""
         dialog = ctk.CTkToplevel(self)
         dialog.title("Add Material/Service to Client")
-        dialog.geometry("500x500")
+        dialog.geometry("550x550")
         dialog.transient(self)
         dialog.grab_set()
 
         # Center the dialog
         dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
-        y = (dialog.winfo_screenheight() // 2) - (500 // 2)
-        dialog.geometry(f"500x500+{x}+{y}")
+        x = (dialog.winfo_screenwidth() // 2) - (550 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (550 // 2)
+        dialog.geometry(f"550x550+{x}+{y}")
 
         header = ctk.CTkLabel(
             dialog,
             text="Select Material/Service",
             font=ctk.CTkFont(size=18, weight="bold")
         )
-        header.pack(pady=20)
+        header.pack(pady=15)
 
         # Get available materials
         all_materials = self.db.get_all_materials()
@@ -671,13 +671,17 @@ class LandscapingApp(ctk.CTk):
             msg.pack(pady=50)
             return
 
+        # Scrollable frame for content
+        scroll_frame = ctk.CTkScrollableFrame(dialog, height=350)
+        scroll_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
         # Material selection
-        material_label = ctk.CTkLabel(dialog, text="Material:", font=ctk.CTkFont(size=14))
+        material_label = ctk.CTkLabel(scroll_frame, text="Material:", font=ctk.CTkFont(size=14))
         material_label.pack(pady=(20, 5))
 
         material_var = tk.StringVar(value=available_materials[0]['name'])
         material_menu = ctk.CTkOptionMenu(
-            dialog,
+            scroll_frame,
             values=[m['name'] for m in available_materials],
             variable=material_var,
             font=ctk.CTkFont(size=13),
@@ -688,14 +692,14 @@ class LandscapingApp(ctk.CTk):
         # Custom cost option
         custom_cost_var = tk.BooleanVar(value=False)
         custom_check = ctk.CTkCheckBox(
-            dialog,
+            scroll_frame,
             text="Use custom cost for this client",
             variable=custom_cost_var,
             font=ctk.CTkFont(size=13)
         )
         custom_check.pack(pady=10)
 
-        cost_entry = ctk.CTkEntry(dialog, placeholder_text="Custom cost", height=35)
+        cost_entry = ctk.CTkEntry(scroll_frame, placeholder_text="Custom cost", height=35)
         cost_entry.pack(pady=5, padx=20, fill="x")
         cost_entry.configure(state="disabled")
 
@@ -710,14 +714,14 @@ class LandscapingApp(ctk.CTk):
 
         # Multiplier option
         multiplier_label = ctk.CTkLabel(
-            dialog,
+            scroll_frame,
             text="Multiplier (how many times this material is applied):",
             font=ctk.CTkFont(size=12)
         )
         multiplier_label.pack(pady=(15, 5))
 
         multiplier_entry = ctk.CTkEntry(
-            dialog,
+            scroll_frame,
             placeholder_text="Default: 1",
             height=35
         )
@@ -725,7 +729,7 @@ class LandscapingApp(ctk.CTk):
         multiplier_entry.pack(pady=5, padx=20, fill="x")
 
         help_label = ctk.CTkLabel(
-            dialog,
+            scroll_frame,
             text="Example: Fertilizer applied 3 times → enter 3",
             font=ctk.CTkFont(size=10),
             text_color="gray"
@@ -975,29 +979,33 @@ class LandscapingApp(ctk.CTk):
         )
         header.pack(pady=15)
 
+        # Scrollable frame for content
+        scroll_frame = ctk.CTkScrollableFrame(dialog, height=550)
+        scroll_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
         # Date
-        date_label = ctk.CTkLabel(dialog, text="Date (MM/DD/YYYY):", font=ctk.CTkFont(size=12))
+        date_label = ctk.CTkLabel(scroll_frame, text="Date (MM/DD/YYYY):", font=ctk.CTkFont(size=12))
         date_label.pack(pady=(8, 4))
-        date_entry = ctk.CTkEntry(dialog, placeholder_text="01/15/2024", height=32)
+        date_entry = ctk.CTkEntry(scroll_frame, placeholder_text="01/15/2024", height=32)
         date_entry.insert(0, datetime.now().strftime("%m/%d/%Y"))
         date_entry.pack(pady=4, padx=20, fill="x")
 
         # Start time
-        start_label = ctk.CTkLabel(dialog, text="Start Time (h:MM AM/PM):", font=ctk.CTkFont(size=12))
+        start_label = ctk.CTkLabel(scroll_frame, text="Start Time (h:MM AM/PM):", font=ctk.CTkFont(size=12))
         start_label.pack(pady=(8, 4))
-        start_entry = ctk.CTkEntry(dialog, placeholder_text="9:00 AM", height=32)
+        start_entry = ctk.CTkEntry(scroll_frame, placeholder_text="9:00 AM", height=32)
         start_entry.pack(pady=4, padx=20, fill="x")
 
         # End time
-        end_label = ctk.CTkLabel(dialog, text="End Time (h:MM AM/PM):", font=ctk.CTkFont(size=12))
+        end_label = ctk.CTkLabel(scroll_frame, text="End Time (h:MM AM/PM):", font=ctk.CTkFont(size=12))
         end_label.pack(pady=(8, 4))
-        end_entry = ctk.CTkEntry(dialog, placeholder_text="11:30 AM", height=32)
+        end_entry = ctk.CTkEntry(scroll_frame, placeholder_text="11:30 AM", height=32)
         end_entry.pack(pady=4, padx=20, fill="x")
 
         # Duration (calculated)
         duration_var = tk.StringVar(value="Duration will be calculated")
         duration_label = ctk.CTkLabel(
-            dialog,
+            scroll_frame,
             textvariable=duration_var,
             font=ctk.CTkFont(size=13),
             text_color="gray"
@@ -1036,14 +1044,14 @@ class LandscapingApp(ctk.CTk):
         end_entry.bind('<KeyRelease>', lambda e: calculate_duration())
 
         # Notes
-        notes_label = ctk.CTkLabel(dialog, text="Notes:", font=ctk.CTkFont(size=14))
+        notes_label = ctk.CTkLabel(scroll_frame, text="Notes:", font=ctk.CTkFont(size=14))
         notes_label.pack(pady=(10, 5))
-        notes_entry = ctk.CTkTextbox(dialog, height=80)
+        notes_entry = ctk.CTkTextbox(scroll_frame, height=80)
         notes_entry.pack(pady=5, padx=20, fill="x")
 
         # Materials section
         materials_label = ctk.CTkLabel(
-            dialog,
+            scroll_frame,
             text="Materials Used (optional):",
             font=ctk.CTkFont(size=14, weight="bold")
         )
@@ -1051,8 +1059,8 @@ class LandscapingApp(ctk.CTk):
 
         # Get client materials
         client_materials = self.db.get_client_materials(client_id)
-        materials_frame = ctk.CTkScrollableFrame(dialog, height=150)
-        materials_frame.pack(pady=5, padx=20, fill="both", expand=True)
+        materials_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+        materials_frame.pack(pady=5, padx=20, fill="both")
 
         material_quantities = {}
         if client_materials:
@@ -1512,45 +1520,49 @@ class LandscapingApp(ctk.CTk):
         """Open dialog to add a new material/service."""
         dialog = ctk.CTkToplevel(self)
         dialog.title("Add New Material/Service")
-        dialog.geometry("500x550")
+        dialog.geometry("500x600")
         dialog.transient(self)
         dialog.grab_set()
 
         # Center the dialog
         dialog.update_idletasks()
         x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
-        y = (dialog.winfo_screenheight() // 2) - (550 // 2)
-        dialog.geometry(f"500x550+{x}+{y}")
+        y = (dialog.winfo_screenheight() // 2) - (600 // 2)
+        dialog.geometry(f"500x600+{x}+{y}")
 
         header = ctk.CTkLabel(
             dialog,
             text="New Material/Service",
             font=ctk.CTkFont(size=18, weight="bold")
         )
-        header.pack(pady=20)
+        header.pack(pady=15)
+
+        # Scrollable frame for content
+        scroll_frame = ctk.CTkScrollableFrame(dialog, height=400)
+        scroll_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
 
         # Name
-        name_label = ctk.CTkLabel(dialog, text="Name *:", font=ctk.CTkFont(size=14))
+        name_label = ctk.CTkLabel(scroll_frame, text="Name *:", font=ctk.CTkFont(size=14))
         name_label.pack(pady=(10, 5))
-        name_entry = ctk.CTkEntry(dialog, placeholder_text="e.g., Mulch, Fertilizer", height=35)
+        name_entry = ctk.CTkEntry(scroll_frame, placeholder_text="e.g., Mulch, Fertilizer", height=35)
         name_entry.pack(pady=5, padx=20, fill="x")
 
         # Default cost
-        cost_label = ctk.CTkLabel(dialog, text="Default Cost ($) *:", font=ctk.CTkFont(size=14))
+        cost_label = ctk.CTkLabel(scroll_frame, text="Default Cost ($) *:", font=ctk.CTkFont(size=14))
         cost_label.pack(pady=(10, 5))
-        cost_entry = ctk.CTkEntry(dialog, placeholder_text="0.00", height=35)
+        cost_entry = ctk.CTkEntry(scroll_frame, placeholder_text="0.00", height=35)
         cost_entry.pack(pady=5, padx=20, fill="x")
 
         # Unit
-        unit_label = ctk.CTkLabel(dialog, text="Unit:", font=ctk.CTkFont(size=14))
+        unit_label = ctk.CTkLabel(scroll_frame, text="Unit:", font=ctk.CTkFont(size=14))
         unit_label.pack(pady=(10, 5))
-        unit_entry = ctk.CTkEntry(dialog, placeholder_text="e.g., bag, gallon, service", height=35)
+        unit_entry = ctk.CTkEntry(scroll_frame, placeholder_text="e.g., bag, gallon, service", height=35)
         unit_entry.pack(pady=5, padx=20, fill="x")
 
         # Is global
         is_global_var = tk.BooleanVar(value=True)
         global_check = ctk.CTkCheckBox(
-            dialog,
+            scroll_frame,
             text="Global (same cost for all clients by default)",
             variable=is_global_var,
             font=ctk.CTkFont(size=13)
@@ -1558,9 +1570,9 @@ class LandscapingApp(ctk.CTk):
         global_check.pack(pady=15)
 
         # Description
-        desc_label = ctk.CTkLabel(dialog, text="Description:", font=ctk.CTkFont(size=14))
+        desc_label = ctk.CTkLabel(scroll_frame, text="Description:", font=ctk.CTkFont(size=14))
         desc_label.pack(pady=(10, 5))
-        desc_entry = ctk.CTkTextbox(dialog, height=80)
+        desc_entry = ctk.CTkTextbox(scroll_frame, height=80)
         desc_entry.pack(pady=5, padx=20, fill="x")
 
         def save_material():
