@@ -712,10 +712,10 @@ class LandscapingApp(ctk.CTk):
 
         custom_check.configure(command=toggle_cost_entry)
 
-        # Multiplier option
+        # Unit option
         multiplier_label = ctk.CTkLabel(
             scroll_frame,
-            text="Multiplier (how many times this material is applied):",
+            text="Unit (how many times this material is applied):",
             font=ctk.CTkFont(size=12)
         )
         multiplier_label.pack(pady=(15, 5))
@@ -752,10 +752,10 @@ class LandscapingApp(ctk.CTk):
             try:
                 multiplier = float(multiplier_entry.get())
                 if multiplier <= 0:
-                    messagebox.showerror("Error", "Multiplier must be greater than 0")
+                    messagebox.showerror("Error", "Unit must be greater than 0")
                     return
             except ValueError:
-                messagebox.showerror("Error", "Multiplier must be a valid number")
+                messagebox.showerror("Error", "Unit must be a valid number")
                 return
 
             self.db.add_client_material(client_id, selected_material['id'], custom_cost, multiplier)
@@ -1553,8 +1553,8 @@ class LandscapingApp(ctk.CTk):
         cost_entry = ctk.CTkEntry(scroll_frame, placeholder_text="0.00", height=35)
         cost_entry.pack(pady=5, padx=20, fill="x")
 
-        # Unit
-        unit_label = ctk.CTkLabel(scroll_frame, text="Unit:", font=ctk.CTkFont(size=14))
+        # Multiplier
+        unit_label = ctk.CTkLabel(scroll_frame, text="Multiplier:", font=ctk.CTkFont(size=14))
         unit_label.pack(pady=(10, 5))
         unit_entry = ctk.CTkEntry(scroll_frame, placeholder_text="e.g., bag, gallon, service", height=35)
         unit_entry.pack(pady=5, padx=20, fill="x")
@@ -1655,8 +1655,8 @@ class LandscapingApp(ctk.CTk):
         cost_entry.insert(0, str(material['default_cost']))
         cost_entry.pack(pady=5, padx=20, fill="x")
 
-        # Unit
-        unit_label = ctk.CTkLabel(dialog, text="Unit:", font=ctk.CTkFont(size=14))
+        # Multiplier
+        unit_label = ctk.CTkLabel(dialog, text="Multiplier:", font=ctk.CTkFont(size=14))
         unit_label.pack(pady=(10, 5))
         unit_entry = ctk.CTkEntry(dialog, height=35)
         unit_entry.insert(0, material['unit'] or "")
