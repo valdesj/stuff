@@ -82,11 +82,18 @@ class Database:
                 end_time TIME NOT NULL,
                 duration_minutes REAL NOT NULL,
                 notes TEXT,
+                needs_review INTEGER NOT NULL DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
             )
         """)
 
+        # Add needs_review column to existing tables (migration)
+        try:
+            cursor.execute("ALTER TABLE visits ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
         # Materials used during visits
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS visit_materials (
@@ -241,13 +248,13 @@ class Database:
     # ==================== VISIT OPERATIONS ====================
 
     def add_visit(self, client_id: int, visit_date: str, start_time: str,
-                  end_time: str, duration_minutes: float, notes: str = "") -> int:
+                  end_time: str, duration_minutes: float, notes: str = "", needs_review: int = 0) -> int:
         """Add a new visit record."""
         cursor = self.connection.cursor()
         cursor.execute("""
-            INSERT INTO visits (client_id, visit_date, start_time, end_time, duration_minutes, notes)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (client_id, visit_date, start_time, end_time, duration_minutes, notes))
+            INSERT INTO visits (client_id, visit_date, start_time, end_time, duration_minutes, notes, needs_review)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (client_id, visit_date, start_time, end_time, duration_minutes, notes, needs_review))
         self.connection.commit()
         return cursor.lastrowid
 
@@ -263,7 +270,7 @@ class Database:
 
     def update_visit(self, visit_id: int, **kwargs):
         """Update visit information."""
-        allowed_fields = ['visit_date', 'start_time', 'end_time', 'duration_minutes', 'notes']
+        allowed_fields = ['visit_date', 'start_time', 'end_time', 'duration_minutes', 'notes', 'needs_review']
         updates = []
         values = []
 
@@ -277,6 +284,35 @@ class Database:
             query = f"UPDATE visits SET {', '.join(updates)} WHERE id = ?"
             self.connection.execute(query, values)
             self.connection.commit()
+
+    def get_visits_needing_review(self) -> List[Dict]:
+        """Get all visits that are flagged as needing review."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT v.*, c.name as client_name
+            FROM visits v
+            JOIN clients c ON v.client_id = c.id
+            WHERE v.needs_review = 1
+            ORDER BY v.visit_date DESC, v.start_time DESC
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_visit_by_id(self, visit_id: int) -> Optional[Dict]:
+        """Get a specific visit by ID."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT v.*, c.name as client_name
+            FROM visits v
+            JOIN clients c ON v.client_id = c.id
+            WHERE v.id = ?
+        """, (visit_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def mark_visit_reviewed(self, visit_id: int):
+        """Mark a visit as reviewed (clear the needs_review flag)."""
+        self.connection.execute("UPDATE visits SET needs_review = 0 WHERE id = ?", (visit_id,))
+        self.connection.commit()
 
     def delete_visit(self, visit_id: int):
         """Delete a visit record."""

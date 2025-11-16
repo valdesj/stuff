@@ -55,6 +55,7 @@ class LandscapingApp(ctk.CTk):
         self.tab_dashboard = self.tabview.add("Dashboard")
         self.tab_clients = self.tabview.add("Clients")
         self.tab_visits = self.tabview.add("Visits")
+        self.tab_review = self.tabview.add("Review")
         self.tab_materials = self.tabview.add("Materials")
         self.tab_import = self.tabview.add("Import Data")
 
@@ -62,6 +63,7 @@ class LandscapingApp(ctk.CTk):
         self.init_dashboard_tab()
         self.init_clients_tab()
         self.init_visits_tab()
+        self.init_review_tab()
         self.init_materials_tab()
         self.init_import_tab()
 
@@ -1129,6 +1131,217 @@ class LandscapingApp(ctk.CTk):
                 self.load_client_visits(self.visit_clients_data[client_name])
             self.refresh_dashboard()
 
+    # ==================== REVIEW TAB ====================
+
+    def init_review_tab(self):
+        """Initialize the review tab for flagged visits."""
+        self.tab_review.grid_columnconfigure(0, weight=1)
+        self.tab_review.grid_rowconfigure(1, weight=1)
+
+        # Header
+        header = ctk.CTkLabel(
+            self.tab_review,
+            text="Flagged Visits - Need Review",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        header.grid(row=0, column=0, sticky="w", padx=15, pady=12)
+
+        # Scrollable frame for flagged visits
+        self.review_scroll = ctk.CTkScrollableFrame(self.tab_review)
+        self.review_scroll.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        self.review_scroll.grid_columnconfigure(0, weight=1)
+
+        # Load flagged visits
+        self.refresh_review_list()
+
+    def refresh_review_list(self):
+        """Refresh the list of visits needing review."""
+        # Clear existing widgets
+        for widget in self.review_scroll.winfo_children():
+            widget.destroy()
+
+        flagged_visits = self.db.get_visits_needing_review()
+
+        if not flagged_visits:
+            no_flagged = ctk.CTkLabel(
+                self.review_scroll,
+                text="No visits flagged for review!\nAll data is clean.",
+                font=ctk.CTkFont(size=16),
+                text_color="green"
+            )
+            no_flagged.grid(row=0, column=0, pady=50)
+            return
+
+        # Show count
+        count_label = ctk.CTkLabel(
+            self.review_scroll,
+            text=f"{len(flagged_visits)} visits need review",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="orange"
+        )
+        count_label.grid(row=0, column=0, sticky="w", padx=10, pady=(0, 10))
+
+        # Create a card for each flagged visit
+        for idx, visit in enumerate(flagged_visits):
+            self.create_review_card(self.review_scroll, visit, idx + 1)
+
+    def create_review_card(self, parent, visit, row):
+        """Create a card for editing a flagged visit."""
+        card = ctk.CTkFrame(parent, border_width=2, border_color="orange")
+        card.grid(row=row, column=0, sticky="ew", padx=10, pady=8)
+        card.grid_columnconfigure(1, weight=1)
+
+        # Header with client name and date
+        formatted_date = self.format_date_mdy(visit['visit_date'])
+        header_label = ctk.CTkLabel(
+            card,
+            text=f"⚠ {visit['client_name']} - {formatted_date}",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="orange"
+        )
+        header_label.grid(row=0, column=0, columnspan=4, sticky="w", padx=12, pady=(10, 8))
+
+        # Editable fields
+        row_num = 1
+
+        # Date
+        date_label = ctk.CTkLabel(card, text="Date:", font=ctk.CTkFont(size=11))
+        date_label.grid(row=row_num, column=0, sticky="w", padx=12, pady=4)
+
+        date_entry = ctk.CTkEntry(card, width=150, font=ctk.CTkFont(size=11))
+        date_entry.insert(0, self.format_date_mdy(visit['visit_date']))
+        date_entry.grid(row=row_num, column=1, sticky="w", padx=8, pady=4)
+
+        # Start time
+        start_label = ctk.CTkLabel(card, text="Start:", font=ctk.CTkFont(size=11))
+        start_label.grid(row=row_num, column=2, sticky="w", padx=12, pady=4)
+
+        start_entry = ctk.CTkEntry(card, width=120, font=ctk.CTkFont(size=11))
+        start_entry.insert(0, self.format_time_12hr(visit['start_time']))
+        start_entry.grid(row=row_num, column=3, sticky="w", padx=8, pady=4)
+        row_num += 1
+
+        # End time and duration
+        end_label = ctk.CTkLabel(card, text="End:", font=ctk.CTkFont(size=11))
+        end_label.grid(row=row_num, column=0, sticky="w", padx=12, pady=4)
+
+        end_entry = ctk.CTkEntry(card, width=150, font=ctk.CTkFont(size=11))
+        end_entry.insert(0, self.format_time_12hr(visit['end_time']))
+        end_entry.grid(row=row_num, column=1, sticky="w", padx=8, pady=4)
+
+        duration_label = ctk.CTkLabel(
+            card,
+            text=f"Duration: {visit['duration_minutes']:.0f} min",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        duration_label.grid(row=row_num, column=2, columnspan=2, sticky="w", padx=12, pady=4)
+        row_num += 1
+
+        # Notes
+        if visit.get('notes'):
+            notes_label = ctk.CTkLabel(
+                card,
+                text=f"Notes: {visit['notes']}",
+                font=ctk.CTkFont(size=10),
+                text_color="gray",
+                wraplength=600
+            )
+            notes_label.grid(row=row_num, column=0, columnspan=4, sticky="w", padx=12, pady=4)
+            row_num += 1
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+        btn_frame.grid(row=row_num, column=0, columnspan=4, sticky="ew", padx=12, pady=(8, 10))
+
+        save_btn = ctk.CTkButton(
+            btn_frame,
+            text="Save & Mark Reviewed",
+            command=lambda: self.save_and_mark_reviewed(
+                visit['id'], date_entry, start_entry, end_entry
+            ),
+            font=ctk.CTkFont(size=11),
+            height=30,
+            fg_color="green"
+        )
+        save_btn.pack(side=tk.LEFT, padx=4)
+
+        delete_btn = ctk.CTkButton(
+            btn_frame,
+            text="Delete Visit",
+            command=lambda: self.delete_flagged_visit(visit['id']),
+            font=ctk.CTkFont(size=11),
+            height=30,
+            fg_color="red"
+        )
+        delete_btn.pack(side=tk.LEFT, padx=4)
+
+    def save_and_mark_reviewed(self, visit_id, date_entry, start_entry, end_entry):
+        """Save visit changes and mark as reviewed."""
+        try:
+            date_str = date_entry.get().strip()
+            start_str = start_entry.get().strip()
+            end_str = end_entry.get().strip()
+
+            # Convert date from MM/DD/YYYY to YYYY-MM-DD
+            try:
+                date_obj = datetime.strptime(date_str, '%m/%d/%Y')
+                db_date = date_obj.strftime('%Y-%m-%d')
+            except:
+                messagebox.showerror("Error", "Invalid date format. Use MM/DD/YYYY")
+                return
+
+            # Convert times from 12-hour to 24-hour
+            try:
+                for fmt in ['%I:%M %p', '%I:%M%p', '%H:%M']:
+                    try:
+                        start_obj = datetime.strptime(start_str, fmt)
+                        end_obj = datetime.strptime(end_str, fmt)
+                        db_start = start_obj.strftime('%H:%M')
+                        db_end = end_obj.strftime('%H:%M')
+                        break
+                    except:
+                        continue
+                else:
+                    raise ValueError()
+            except:
+                messagebox.showerror("Error", "Invalid time format. Use h:MM AM/PM")
+                return
+
+            # Calculate duration
+            start = datetime.strptime(db_start, '%H:%M')
+            end = datetime.strptime(db_end, '%H:%M')
+            duration = (end - start).total_seconds() / 60
+
+            if duration <= 0:
+                messagebox.showerror("Error", "End time must be after start time")
+                return
+
+            # Update visit
+            self.db.update_visit(
+                visit_id,
+                visit_date=db_date,
+                start_time=db_start,
+                end_time=db_end,
+                duration_minutes=duration,
+                needs_review=0
+            )
+
+            messagebox.showinfo("Success", "Visit updated and marked as reviewed!")
+            self.refresh_review_list()
+            self.refresh_dashboard()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to update visit: {str(e)}")
+
+    def delete_flagged_visit(self, visit_id):
+        """Delete a flagged visit."""
+        if messagebox.askyesno("Confirm Delete", "Delete this flagged visit?"):
+            self.db.delete_visit(visit_id)
+            messagebox.showinfo("Success", "Visit deleted")
+            self.refresh_review_list()
+            self.refresh_dashboard()
+
     # ==================== MATERIALS TAB ====================
 
     def init_materials_tab(self):
@@ -1781,17 +1994,31 @@ OCR Scanning Instructions (To be implemented):
             )
             success_label.pack(pady=50)
 
+        # Option to import errors as flagged for review
+        if error_count > 0:
+            options_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+            options_frame.pack(fill="x", padx=20, pady=(10, 0))
+
+            self.import_errors_var = tk.BooleanVar(value=False)
+            import_errors_check = ctk.CTkCheckBox(
+                options_frame,
+                text=f"Import error visits anyway and flag for later review ({error_count} visits)",
+                variable=self.import_errors_var,
+                font=ctk.CTkFont(size=12)
+            )
+            import_errors_check.pack(anchor="w", pady=5)
+
         # Buttons
         btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=20, pady=(0, 20))
+        btn_frame.pack(fill="x", padx=20, pady=(10, 20))
 
         # Import button
         proceed_btn = ctk.CTkButton(
             btn_frame,
             text=f"Import Data ({len(preview_results.get('clients', []))} clients, {total_visits} visits)",
             command=lambda: self.confirm_and_import(dialog, preview_results),
-            font=ctk.CTkFont(size=16),
-            height=45,
+            font=ctk.CTkFont(size=14),
+            height=40,
             fg_color="green"
         )
         proceed_btn.pack(side=tk.LEFT, padx=5)
@@ -1800,8 +2027,8 @@ OCR Scanning Instructions (To be implemented):
             btn_frame,
             text="Cancel",
             command=dialog.destroy,
-            font=ctk.CTkFont(size=16),
-            height=45,
+            font=ctk.CTkFont(size=14),
+            height=40,
             fg_color="gray"
         )
         cancel_btn.pack(side=tk.LEFT, padx=5)
@@ -1887,6 +2114,10 @@ OCR Scanning Instructions (To be implemented):
             if not visit.get('has_error'):
                 validated_visits.append(visit)
 
+        # Check if user wants to import errors as flagged
+        import_errors_as_review = getattr(self, 'import_errors_var', None)
+        import_errors_as_review = import_errors_as_review.get() if import_errors_as_review else False
+
         # Confirm import with corrected data
         if messagebox.askyesno(
             "Confirm Import",
@@ -1898,9 +2129,9 @@ OCR Scanning Instructions (To be implemented):
             dialog.destroy()
             # Update preview_results with validated visits
             preview_results['visits'] = validated_visits
-            self.perform_excel_import(preview_results)
+            self.perform_excel_import(preview_results, import_errors_as_review)
 
-    def perform_excel_import(self, preview_results):
+    def perform_excel_import(self, preview_results, import_errors_as_review=False):
         """Actually perform the import to the database."""
         # Show progress dialog
         progress_dialog = ctk.CTkToplevel(self)
@@ -1927,7 +2158,7 @@ OCR Scanning Instructions (To be implemented):
         self.update()
 
         # Perform import
-        results = self.excel_importer.execute_import(preview_results)
+        results = self.excel_importer.execute_import(preview_results, import_errors_as_review)
 
         progress_dialog.destroy()
 
@@ -1935,6 +2166,9 @@ OCR Scanning Instructions (To be implemented):
         msg = "Import Complete!\n\n"
         msg += f"Clients added: {results['clients_added']}\n"
         msg += f"Visits added: {results['visits_added']}\n"
+
+        if results.get('visits_flagged', 0) > 0:
+            msg += f"Visits flagged for review: {results['visits_flagged']}\n"
 
         if results.get('errors'):
             msg += f"\nErrors: {len(results['errors'])}"
@@ -2204,6 +2438,7 @@ OCR Scanning Instructions (To be implemented):
         self.refresh_clients_list()
         self.refresh_materials_list()
         self.refresh_visit_client_dropdown()
+        self.refresh_review_list()
         messagebox.showinfo("Refreshed", "All data refreshed successfully!")
 
     def on_closing(self):

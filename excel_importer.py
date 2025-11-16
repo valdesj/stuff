@@ -58,12 +58,13 @@ class ExcelImporter:
 
         return results
 
-    def execute_import(self, preview_results: Dict) -> Dict:
+    def execute_import(self, preview_results: Dict, import_errors_as_review: bool = False) -> Dict:
         """
         Execute the actual import to database using previewed data.
 
         Args:
             preview_results: Results from preview_import
+            import_errors_as_review: If True, import visits with errors as needs_review
 
         Returns:
             Dictionary with import results
@@ -71,6 +72,7 @@ class ExcelImporter:
         results = {
             'clients_added': 0,
             'visits_added': 0,
+            'visits_flagged': 0,
             'errors': [],
         }
 
@@ -103,25 +105,35 @@ class ExcelImporter:
             # Batch insert visits for better performance
             visit_batch = []
             for visit_data in preview_results.get('visits', []):
-                if visit_data.get('has_error'):
-                    continue  # Skip visits with errors
+                has_error = visit_data.get('has_error', False)
+
+                # Skip errors unless we're importing them as flagged
+                if has_error and not import_errors_as_review:
+                    continue
 
                 client_id = client_map.get(visit_data['client_name'].lower())
                 if client_id:
+                    # Flag visit for review if it has errors
+                    needs_review = 1 if has_error else 0
+
                     visit_batch.append((
                         client_id,
                         visit_data['date'],
                         visit_data['start_time'],
                         visit_data['end_time'],
                         visit_data['duration_minutes'],
-                        visit_data.get('notes', '')
+                        visit_data.get('notes', ''),
+                        needs_review
                     ))
+
+                    if has_error:
+                        results['visits_flagged'] += 1
 
             # Batch insert all visits at once
             if visit_batch:
                 cursor.executemany("""
-                    INSERT INTO visits (client_id, visit_date, start_time, end_time, duration_minutes, notes)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO visits (client_id, visit_date, start_time, end_time, duration_minutes, notes, needs_review)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, visit_batch)
                 results['visits_added'] = len(visit_batch)
 
