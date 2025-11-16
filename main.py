@@ -10,6 +10,11 @@ from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
 from typing import Optional
+import matplotlib
+matplotlib.use('TkAgg')
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.dates as mdates
 
 
 # Configure CustomTkinter
@@ -32,7 +37,7 @@ class LandscapingApp(ctk.CTk):
 
         # Configure window
         self.title("Landscaping Client Tracker")
-        self.geometry("1200x800")
+        self.geometry("1300x850")
 
         # Configure grid
         self.grid_columnconfigure(0, weight=1)
@@ -40,7 +45,7 @@ class LandscapingApp(ctk.CTk):
 
         # Create main container
         self.main_container = ctk.CTkFrame(self)
-        self.main_container.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.main_container.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         self.main_container.grid_columnconfigure(0, weight=1)
         self.main_container.grid_rowconfigure(1, weight=1)
 
@@ -48,8 +53,8 @@ class LandscapingApp(ctk.CTk):
         self.create_header()
 
         # Create tabview for different sections
-        self.tabview = ctk.CTkTabview(self.main_container, height=700)
-        self.tabview.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+        self.tabview = ctk.CTkTabview(self.main_container, height=750)
+        self.tabview.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
         # Add tabs
         self.tab_dashboard = self.tabview.add("Dashboard")
@@ -79,77 +84,302 @@ class LandscapingApp(ctk.CTk):
     def create_header(self):
         """Create the application header with title and refresh button."""
         header_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
-        header_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
+        header_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=3)
         header_frame.grid_columnconfigure(0, weight=1)
 
         title = ctk.CTkLabel(
             header_frame,
             text="🌿 Landscaping Client Tracker",
-            font=ctk.CTkFont(size=20, weight="bold")
+            font=ctk.CTkFont(size=16, weight="bold")
         )
-        title.grid(row=0, column=0, sticky="w", padx=8, pady=8)
+        title.grid(row=0, column=0, sticky="w", padx=5, pady=3)
 
         settings_btn = ctk.CTkButton(
             header_frame,
             text="⚙ Settings",
             command=self.show_settings_dialog,
-            font=ctk.CTkFont(size=12),
-            height=32,
-            width=120
+            font=ctk.CTkFont(size=10),
+            height=26,
+            width=100
         )
-        settings_btn.grid(row=0, column=1, padx=8, pady=8)
+        settings_btn.grid(row=0, column=1, padx=3, pady=3)
 
         refresh_btn = ctk.CTkButton(
             header_frame,
             text="Refresh All",
             command=self.refresh_all,
-            font=ctk.CTkFont(size=12),
-            height=32,
-            width=120
+            font=ctk.CTkFont(size=10),
+            height=26,
+            width=100
         )
-        refresh_btn.grid(row=0, column=2, padx=8, pady=8)
+        refresh_btn.grid(row=0, column=2, padx=3, pady=3)
 
     # ==================== DASHBOARD TAB ====================
 
     def init_dashboard_tab(self):
         """Initialize the dashboard tab with client statistics."""
         self.tab_dashboard.grid_columnconfigure(0, weight=1)
-        self.tab_dashboard.grid_rowconfigure(1, weight=1)
+        self.tab_dashboard.grid_rowconfigure(2, weight=1)
 
-        # Header
+        # Header with filter
+        header_frame = ctk.CTkFrame(self.tab_dashboard, fg_color="transparent")
+        header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
+        header_frame.grid_columnconfigure(1, weight=1)
+
         header = ctk.CTkLabel(
-            self.tab_dashboard,
-            text="Client Overview & Profitability",
-            font=ctk.CTkFont(size=16, weight="bold")
+            header_frame,
+            text="Client Overview",
+            font=ctk.CTkFont(size=14, weight="bold")
         )
-        header.grid(row=0, column=0, sticky="w", padx=15, pady=12)
+        header.grid(row=0, column=0, sticky="w", padx=5)
 
-        # Scrollable frame for client cards
-        self.dashboard_scroll = ctk.CTkScrollableFrame(self.tab_dashboard)
-        self.dashboard_scroll.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
-        self.dashboard_scroll.grid_columnconfigure(0, weight=1)
+        # Client filter dropdown
+        filter_label = ctk.CTkLabel(header_frame, text="Filter:", font=ctk.CTkFont(size=11))
+        filter_label.grid(row=0, column=1, sticky="e", padx=(0, 5))
+
+        self.dashboard_filter_var = tk.StringVar(value="📉 Losing Money")
+        self.dashboard_filter_menu = ctk.CTkOptionMenu(
+            header_frame,
+            variable=self.dashboard_filter_var,
+            values=["📉 Losing Money", "📈 Earning Money"],
+            command=self.on_dashboard_filter_change,
+            font=ctk.CTkFont(size=11),
+            height=28,
+            width=180
+        )
+        self.dashboard_filter_menu.grid(row=0, column=2, sticky="e", padx=5)
+
+        # Client info frame (for selected client card)
+        self.dashboard_client_frame = ctk.CTkFrame(self.tab_dashboard)
+        self.dashboard_client_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
+        self.dashboard_client_frame.grid_columnconfigure(0, weight=1)
+
+        # Visualization frame
+        viz_frame = ctk.CTkFrame(self.tab_dashboard)
+        viz_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+        viz_frame.grid_columnconfigure(0, weight=1)
+        viz_frame.grid_rowconfigure(1, weight=1)
+
+        # Visualization header with toggle
+        viz_header_frame = ctk.CTkFrame(viz_frame, fg_color="transparent")
+        viz_header_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=3)
+
+        viz_title = ctk.CTkLabel(
+            viz_header_frame,
+            text="Visit Trends (This Year)",
+            font=ctk.CTkFont(size=13, weight="bold")
+        )
+        viz_title.pack(side="left", padx=5)
+
+        self.viz_mode_var = tk.StringVar(value="time")
+        viz_toggle_frame = ctk.CTkFrame(viz_header_frame, fg_color="transparent")
+        viz_toggle_frame.pack(side="right", padx=5)
+
+        time_radio = ctk.CTkRadioButton(
+            viz_toggle_frame,
+            text="Time/Visit",
+            variable=self.viz_mode_var,
+            value="time",
+            command=self.update_visualization,
+            font=ctk.CTkFont(size=10)
+        )
+        time_radio.pack(side="left", padx=3)
+
+        cost_radio = ctk.CTkRadioButton(
+            viz_toggle_frame,
+            text="Cost/Visit",
+            variable=self.viz_mode_var,
+            value="cost",
+            command=self.update_visualization,
+            font=ctk.CTkFont(size=10)
+        )
+        cost_radio.pack(side="left", padx=3)
+
+        # Canvas for matplotlib
+        self.viz_canvas_frame = ctk.CTkFrame(viz_frame)
+        self.viz_canvas_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.viz_canvas_frame.grid_columnconfigure(0, weight=1)
+        self.viz_canvas_frame.grid_rowconfigure(0, weight=1)
+
+        self.current_viz_client_id = None
 
     def refresh_dashboard(self):
         """Refresh the dashboard with updated statistics."""
-        # Clear existing widgets
-        for widget in self.dashboard_scroll.winfo_children():
+        # Get all client statistics
+        stats_list = self.db.get_all_client_statistics(active_only=True)
+
+        if not stats_list:
+            # Clear filter options
+            self.dashboard_filter_menu.configure(values=["No clients"])
+            self.dashboard_filter_var.set("No clients")
+
+            # Clear client frame
+            for widget in self.dashboard_client_frame.winfo_children():
+                widget.destroy()
+
+            no_data = ctk.CTkLabel(
+                self.dashboard_client_frame,
+                text="No active clients. Add clients in the Clients tab.",
+                font=ctk.CTkFont(size=13)
+            )
+            no_data.pack(pady=20)
+
+            # Clear visualization
+            for widget in self.viz_canvas_frame.winfo_children():
+                widget.destroy()
+            return
+
+        # Build filter options
+        filter_options = ["📉 Losing Money", "📈 Earning Money", "---"]
+
+        # Sort clients by name and add to filter
+        sorted_stats = sorted(stats_list, key=lambda x: x['client_name'])
+        for stats in sorted_stats:
+            filter_options.append(stats['client_name'])
+
+        # Update filter dropdown
+        self.dashboard_filter_menu.configure(values=filter_options)
+
+        # Keep current selection if valid, otherwise default to "Losing Money"
+        current = self.dashboard_filter_var.get()
+        if current not in filter_options:
+            self.dashboard_filter_var.set("📉 Losing Money")
+
+        # Update display
+        self.on_dashboard_filter_change(self.dashboard_filter_var.get())
+
+    def on_dashboard_filter_change(self, selection):
+        """Handle dashboard filter selection change."""
+        # Clear client frame
+        for widget in self.dashboard_client_frame.winfo_children():
             widget.destroy()
 
         # Get all client statistics
         stats_list = self.db.get_all_client_statistics(active_only=True)
 
         if not stats_list:
-            no_data = ctk.CTkLabel(
-                self.dashboard_scroll,
-                text="No active clients. Add clients in the Clients tab.",
-                font=ctk.CTkFont(size=16)
-            )
-            no_data.grid(row=0, column=0, pady=50)
             return
 
-        # Create a card for each client
-        for idx, stats in enumerate(stats_list):
-            self.create_client_card(self.dashboard_scroll, stats, idx)
+        # Filter based on selection
+        if selection == "📉 Losing Money":
+            filtered = [s for s in stats_list if not s['is_profitable']]
+            if filtered:
+                # Show first losing money client
+                self.create_client_card(self.dashboard_client_frame, filtered[0], 0)
+                self.current_viz_client_id = filtered[0]['client_id']
+            else:
+                msg = ctk.CTkLabel(
+                    self.dashboard_client_frame,
+                    text="No clients are losing money! 🎉",
+                    font=ctk.CTkFont(size=13)
+                )
+                msg.pack(pady=20)
+                self.current_viz_client_id = None
+        elif selection == "📈 Earning Money":
+            filtered = [s for s in stats_list if s['is_profitable']]
+            if filtered:
+                # Show first earning money client
+                self.create_client_card(self.dashboard_client_frame, filtered[0], 0)
+                self.current_viz_client_id = filtered[0]['client_id']
+            else:
+                msg = ctk.CTkLabel(
+                    self.dashboard_client_frame,
+                    text="No profitable clients yet.",
+                    font=ctk.CTkFont(size=13)
+                )
+                msg.pack(pady=20)
+                self.current_viz_client_id = None
+        elif selection != "---" and selection != "No clients":
+            # Show specific client by name
+            client_stats = next((s for s in stats_list if s['client_name'] == selection), None)
+            if client_stats:
+                self.create_client_card(self.dashboard_client_frame, client_stats, 0)
+                self.current_viz_client_id = client_stats['client_id']
+
+        # Update visualization
+        self.update_visualization()
+
+    def update_visualization(self, *args):
+        """Update the visualization chart based on current client and mode."""
+        # Clear existing visualization
+        for widget in self.viz_canvas_frame.winfo_children():
+            widget.destroy()
+
+        if not self.current_viz_client_id:
+            return
+
+        # Get visit data for current year
+        current_year = datetime.now().year
+        visits = self.db.get_client_visits(self.current_viz_client_id)
+
+        # Filter to current year and sort by date
+        visits_this_year = [
+            v for v in visits
+            if datetime.strptime(v['visit_date'], '%Y-%m-%d').year == current_year
+        ]
+        visits_this_year.sort(key=lambda x: x['visit_date'])
+
+        if not visits_this_year:
+            no_data = ctk.CTkLabel(
+                self.viz_canvas_frame,
+                text="No visits recorded this year",
+                font=ctk.CTkFont(size=11)
+            )
+            no_data.pack(pady=20)
+            return
+
+        # Get hourly rate for cost calculation
+        hourly_rate = self.db.get_hourly_rate()
+
+        # Prepare data
+        dates = [datetime.strptime(v['visit_date'], '%Y-%m-%d') for v in visits_this_year]
+
+        if self.viz_mode_var.get() == "time":
+            values = [v['duration_minutes'] for v in visits_this_year]
+            ylabel = "Time (minutes)"
+            title = "Time per Visit"
+        else:  # cost mode
+            # Cost = (time in hours * 2 crew * hourly_rate) + materials
+            values = []
+            for visit in visits_this_year:
+                labor_cost = (visit['duration_minutes'] / 60) * 2 * hourly_rate
+                # Get materials for this visit
+                visit_materials = self.db.get_visit_materials(visit['id'])
+                material_cost = sum(vm['quantity'] * vm['cost_at_time'] for vm in visit_materials)
+                total_cost = labor_cost + material_cost
+                values.append(total_cost)
+            ylabel = "Cost ($)"
+            title = "Cost per Visit"
+
+        # Create matplotlib figure
+        fig = Figure(figsize=(8, 3), dpi=100, facecolor='#2b2b2b')
+        ax = fig.add_subplot(111)
+        ax.set_facecolor('#2b2b2b')
+
+        # Plot data
+        ax.plot(dates, values, marker='o', linestyle='-', linewidth=2, markersize=4, color='#1f77b4')
+        ax.set_xlabel("Date", fontsize=9, color='white')
+        ax.set_ylabel(ylabel, fontsize=9, color='white')
+        ax.set_title(title, fontsize=10, color='white', pad=5)
+        ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+        ax.tick_params(colors='white', labelsize=8)
+
+        # Format x-axis dates
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+        fig.autofmt_xdate(rotation=45, ha='right')
+
+        # Adjust layout
+        fig.tight_layout(pad=1.5)
+
+        # Embed in tkinter
+        canvas = FigureCanvasTkAgg(fig, master=self.viz_canvas_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+        # Update spine colors for dark theme
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#555555')
 
     def create_client_card(self, parent, stats, row):
         """Create a visual card showing client statistics."""
@@ -164,30 +394,30 @@ class LandscapingApp(ctk.CTk):
             status_color = "red"
 
         # Card frame
-        card = ctk.CTkFrame(parent, border_width=2, border_color=border_color)
-        card.grid(row=row, column=0, sticky="ew", padx=8, pady=6)
+        card = ctk.CTkFrame(parent, border_width=1, border_color=border_color)
+        card.grid(row=row, column=0, sticky="ew", padx=3, pady=3)
         card.grid_columnconfigure(1, weight=1)
 
         # Client name
         name_label = ctk.CTkLabel(
             card,
             text=stats['client_name'],
-            font=ctk.CTkFont(size=14, weight="bold")
+            font=ctk.CTkFont(size=12, weight="bold")
         )
-        name_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 4))
+        name_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(5, 2))
 
         # Status indicator
         status_label = ctk.CTkLabel(
             card,
             text=status_text,
-            font=ctk.CTkFont(size=11, weight="bold"),
+            font=ctk.CTkFont(size=9, weight="bold"),
             text_color=status_color
         )
-        status_label.grid(row=0, column=2, padx=12, pady=(10, 4))
+        status_label.grid(row=0, column=2, padx=6, pady=(5, 2))
 
         # Statistics grid
         stats_frame = ctk.CTkFrame(card, fg_color="transparent")
-        stats_frame.grid(row=1, column=0, columnspan=3, sticky="ew", padx=20, pady=10)
+        stats_frame.grid(row=1, column=0, columnspan=3, sticky="ew", padx=8, pady=4)
 
         # Create stat items
         stat_items = [
@@ -211,19 +441,19 @@ class LandscapingApp(ctk.CTk):
             row_pos = i // 2
 
             item_frame = ctk.CTkFrame(stats_frame, fg_color="transparent")
-            item_frame.grid(row=row_pos, column=col, sticky="w", padx=12, pady=3)
+            item_frame.grid(row=row_pos, column=col, sticky="w", padx=6, pady=1)
 
             lbl = ctk.CTkLabel(
                 item_frame,
                 text=label,
-                font=ctk.CTkFont(size=11)
+                font=ctk.CTkFont(size=9)
             )
-            lbl.grid(row=0, column=0, sticky="w", padx=(0, 8))
+            lbl.grid(row=0, column=0, sticky="w", padx=(0, 4))
 
             val = ctk.CTkLabel(
                 item_frame,
                 text=value,
-                font=ctk.CTkFont(size=11, weight="bold")
+                font=ctk.CTkFont(size=9, weight="bold")
             )
             val.grid(row=0, column=1, sticky="w")
 
@@ -232,11 +462,11 @@ class LandscapingApp(ctk.CTk):
                 info_label = ctk.CTkLabel(
                     item_frame,
                     text="?",
-                    font=ctk.CTkFont(size=10, weight="bold"),
+                    font=ctk.CTkFont(size=8, weight="bold"),
                     text_color="gray",
                     cursor="hand2"
                 )
-                info_label.grid(row=0, column=2, sticky="w", padx=(4, 0))
+                info_label.grid(row=0, column=2, sticky="w", padx=(2, 0))
 
                 # Create tooltip
                 def create_tooltip(widget, text):
