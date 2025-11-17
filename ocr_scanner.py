@@ -5,39 +5,123 @@ try:
     OCR_AVAILABLE = True
 except ImportError:
     OCR_AVAILABLE = False
+    try:
+        from PIL import Image
+    except ImportError:
+        Image = None
 
 import re
 from datetime import datetime
 from typing import List, Dict, Optional
 import os
+import requests
+import base64
+import io
 
 
 class OCRScanner:
     """Handles scanning and parsing paper records using OCR."""
 
-    def __init__(self):
-        """Initialize the OCR scanner."""
+    def __init__(self, use_cloud: bool = True):
+        """
+        Initialize the OCR scanner.
+
+        Args:
+            use_cloud: If True, use cloud OCR (requires internet). If False, use local tesseract.
+        """
         self.ocr_available = OCR_AVAILABLE
+        self.use_cloud = use_cloud
 
     def is_available(self) -> bool:
         """Check if OCR functionality is available."""
+        if self.use_cloud:
+            return True  # Cloud OCR is always available if internet works
         return self.ocr_available
 
-    def scan_image(self, image_path: str, preprocess: bool = True) -> Optional[str]:
+    def scan_image_cloud(self, image_path: str) -> Optional[str]:
         """
-        Scan an image and extract text using OCR.
+        Scan an image using cloud OCR API (OCR.space - free, no API key needed).
 
         Args:
             image_path: Path to the image file
-            preprocess: Whether to preprocess image for better OCR accuracy
 
         Returns:
             Extracted text or None if failed
         """
-        if not self.ocr_available:
+        try:
+            # Read and encode image
+            with open(image_path, 'rb') as f:
+                image_data = f.read()
+
+            # Prepare request to OCR.space API (free tier, no API key needed)
+            url = 'https://api.ocr.space/parse/image'
+
+            # Prepare the payload
+            files = {
+                'file': ('image.jpg', image_data, 'image/jpeg')
+            }
+
+            payload = {
+                'apikey': 'helloworld',  # Free API key for basic use
+                'language': 'eng',
+                'isOverlayRequired': 'false',
+                'OCREngine': '2',  # Use OCR Engine 2 for better accuracy
+                'scale': 'true',
+                'isTable': 'false'
+            }
+
+            # Make request with timeout
+            response = requests.post(url, files=files, data=payload, timeout=30)
+
+            if response.status_code == 200:
+                result = response.json()
+
+                if result.get('IsErroredOnProcessing'):
+                    error_msg = result.get('ErrorMessage', ['Unknown error'])[0]
+                    print(f"Cloud OCR error: {error_msg}")
+                    return None
+
+                # Extract text from result
+                parsed_results = result.get('ParsedResults', [])
+                if parsed_results:
+                    text = parsed_results[0].get('ParsedText', '')
+                    return text
+
             return None
 
+        except requests.exceptions.RequestException as e:
+            print(f"Cloud OCR request failed: {str(e)}")
+            return None
+        except Exception as e:
+            print(f"Cloud OCR failed: {str(e)}")
+            return None
+
+    def scan_image(self, image_path: str, preprocess: bool = True) -> Optional[str]:
+        """
+        Scan an image and extract text using OCR.
+        Uses cloud OCR by default (no installation needed), falls back to local tesseract.
+
+        Args:
+            image_path: Path to the image file
+            preprocess: Whether to preprocess image for better OCR accuracy (local tesseract only)
+
+        Returns:
+            Extracted text or None if failed
+        """
         if not os.path.exists(image_path):
+            return None
+
+        # Try cloud OCR first (preferred - no installation needed)
+        if self.use_cloud:
+            text = self.scan_image_cloud(image_path)
+            if text:
+                return text
+
+            # If cloud OCR fails, try local tesseract as fallback
+            print("Cloud OCR failed, trying local tesseract...")
+
+        # Fallback to local tesseract
+        if not self.ocr_available:
             return None
 
         try:
@@ -52,7 +136,7 @@ class OCRScanner:
             text = pytesseract.image_to_string(image, config=custom_config)
             return text
         except Exception as e:
-            print(f"OCR failed: {str(e)}")
+            print(f"Local OCR failed: {str(e)}")
             return None
 
     def _preprocess_image(self, image: 'Image.Image') -> 'Image.Image':

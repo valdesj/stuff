@@ -155,7 +155,8 @@ class LandscapingApp(ctk.CTk):
     def get_ocr_scanner(self):
         """Get OCR scanner with lazy initialization."""
         if self.ocr_scanner is None:
-            self.ocr_scanner = OCRScanner()
+            # Use cloud OCR by default (no installation needed, requires internet)
+            self.ocr_scanner = OCRScanner(use_cloud=True)
         return self.ocr_scanner
 
     def on_tab_change(self):
@@ -2872,17 +2873,8 @@ class LandscapingApp(ctk.CTk):
 
     def scan_visit_image(self):
         """Open file dialog to scan an image for visit data."""
-        # Check if OCR is available
-        if not self.ocr_scanner.is_available():
-            messagebox.showerror(
-                "OCR Not Available",
-                "OCR functionality is not available.\n\n"
-                "Please ensure tesseract-ocr is installed on your system:\n"
-                "- Windows: Download from https://github.com/UB-Mannheim/tesseract/wiki\n"
-                "- Mac: brew install tesseract\n"
-                "- Linux: sudo apt-get install tesseract-ocr"
-            )
-            return
+        # Get OCR scanner (lazy initialization)
+        ocr_scanner = self.get_ocr_scanner()
 
         # Open file dialog
         file_path = filedialog.askopenfilename(
@@ -2920,11 +2912,22 @@ class LandscapingApp(ctk.CTk):
 
         # Scan the image
         try:
-            result = self.ocr_scanner.scan_and_parse_visits(file_path)
+            result = ocr_scanner.scan_and_parse_visits(file_path)
             progress_dialog.destroy()
 
             if not result['success']:
-                messagebox.showerror("Scan Failed", result.get('error', 'Unknown error occurred'))
+                error_msg = result.get('error', 'Unknown error occurred')
+
+                # Show helpful message based on error
+                if 'internet' in error_msg.lower() or 'request' in error_msg.lower():
+                    messagebox.showerror(
+                        "Scan Failed",
+                        f"{error_msg}\n\n"
+                        "Cloud OCR requires an internet connection.\n"
+                        "Please check your connection and try again."
+                    )
+                else:
+                    messagebox.showerror("Scan Failed", error_msg)
                 return
 
             if not result['records']:
@@ -2939,13 +2942,23 @@ class LandscapingApp(ctk.CTk):
                 return
 
             # Show review dialog
-            self.show_scanned_visits_dialog(result['records'], result['text'])
+            self.show_scanned_visits_dialog(result['records'], result['text'], ocr_scanner)
 
         except Exception as e:
             progress_dialog.destroy()
-            messagebox.showerror("Error", f"Failed to scan image:\n{str(e)}")
+            error_str = str(e)
 
-    def show_scanned_visits_dialog(self, records: list, raw_text: str):
+            # Provide helpful error messages
+            if 'connection' in error_str.lower() or 'network' in error_str.lower():
+                messagebox.showerror(
+                    "Connection Error",
+                    "Failed to connect to cloud OCR service.\n\n"
+                    "Please check your internet connection and try again."
+                )
+            else:
+                messagebox.showerror("Error", f"Failed to scan image:\n{error_str}")
+
+    def show_scanned_visits_dialog(self, records: list, raw_text: str, ocr_scanner):
         """Show dialog to review and import scanned visit records."""
         dialog = ctk.CTkToplevel(self)
         dialog.title("Review Scanned Visits")
@@ -3051,7 +3064,7 @@ class LandscapingApp(ctk.CTk):
             scanned_client_name = record.get('client_name', '')
             matched_client = None
             if scanned_client_name:
-                matched_client = self.ocr_scanner.match_client_name(scanned_client_name, all_clients)
+                matched_client = ocr_scanner.match_client_name(scanned_client_name, all_clients)
 
             client_names = [c['name'] for c in all_clients]
             client_var = tk.StringVar()
