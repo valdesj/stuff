@@ -2776,150 +2776,164 @@ class LandscapingApp(ctk.CTk):
     def init_todo_tab(self):
         """Initialize the to-do tab for data review and missing client info."""
         self.tab_todo.grid_columnconfigure(0, weight=1)
-        self.tab_todo.grid_rowconfigure(1, weight=1)
+        self.tab_todo.grid_rowconfigure(0, weight=1)
 
-        # Header
-        header = ctk.CTkLabel(
-            self.tab_todo,
-            text="To-Do - Data Review & Missing Information",
-            font=ctk.CTkFont(size=16, weight="bold")
-        )
-        header.grid(row=0, column=0, sticky="w", padx=15, pady=12)
+        # Create sub-tabs for different to-do categories
+        self.todo_tabview = ctk.CTkTabview(self.tab_todo)
+        self.todo_tabview.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
 
-        # Scrollable frame for issues
-        self.todo_scroll = ctk.CTkScrollableFrame(self.tab_todo)
-        self.todo_scroll.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
-        self.todo_scroll.grid_columnconfigure(0, weight=1)
+        # Create sub-tabs (titles will be updated with counts)
+        self.todo_contact_tab = self.todo_tabview.add("Contact Info")
+        self.todo_services_tab = self.todo_tabview.add("Services/Materials")
+        self.todo_durations_tab = self.todo_tabview.add("Unusual Durations")
+        self.todo_flagged_tab = self.todo_tabview.add("Flagged Visits")
+
+        # Configure each sub-tab
+        for tab in [self.todo_contact_tab, self.todo_services_tab, self.todo_durations_tab, self.todo_flagged_tab]:
+            tab.grid_columnconfigure(0, weight=1)
+            tab.grid_rowconfigure(0, weight=1)
+
+        # Create scrollable frames for each sub-tab
+        self.todo_contact_scroll = ctk.CTkScrollableFrame(self.todo_contact_tab)
+        self.todo_contact_scroll.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.todo_contact_scroll.grid_columnconfigure(0, weight=1)
+
+        self.todo_services_scroll = ctk.CTkScrollableFrame(self.todo_services_tab)
+        self.todo_services_scroll.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.todo_services_scroll.grid_columnconfigure(0, weight=1)
+
+        self.todo_durations_scroll = ctk.CTkScrollableFrame(self.todo_durations_tab)
+        self.todo_durations_scroll.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.todo_durations_scroll.grid_columnconfigure(0, weight=1)
+
+        self.todo_flagged_scroll = ctk.CTkScrollableFrame(self.todo_flagged_tab)
+        self.todo_flagged_scroll.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.todo_flagged_scroll.grid_columnconfigure(0, weight=1)
 
         # Load all issues
         self.refresh_todo_list()
 
     def refresh_todo_list(self):
         """Refresh the list of to-do items: visits needing review, anomalous durations, and missing client data."""
-        # Clear existing widgets
-        for widget in self.todo_scroll.winfo_children():
+        # Clear all sub-tab scrollable frames
+        for widget in self.todo_contact_scroll.winfo_children():
+            widget.destroy()
+        for widget in self.todo_services_scroll.winfo_children():
+            widget.destroy()
+        for widget in self.todo_durations_scroll.winfo_children():
+            widget.destroy()
+        for widget in self.todo_flagged_scroll.winfo_children():
             widget.destroy()
 
+        # Get all to-do data
         flagged_visits = self.db.get_visits_needing_review()
         anomalous_visits = self.db.get_visits_with_anomalous_durations(threshold_percent=300.0)
         missing_data_clients = self.db.get_clients_missing_services_materials()
         missing_contact_clients = self.db.get_clients_missing_contact_info()
 
-        # Check if there are any issues
-        if not flagged_visits and not anomalous_visits and not missing_data_clients and not missing_contact_clients:
-            no_issues = ctk.CTkLabel(
-                self.todo_scroll,
-                text="Nothing to do!\nAll data looks good.",
-                font=ctk.CTkFont(size=16),
-                text_color="#5FA777"
-            )
-            no_issues.grid(row=0, column=0, pady=50)
-            return
+        # Update sub-tab titles with counts
+        contact_count = len(missing_contact_clients)
+        services_count = len(missing_data_clients)
+        durations_count = len(anomalous_visits)
+        flagged_count = len(flagged_visits)
 
-        current_row = 0
+        # Rename tabs with counts
+        self.todo_tabview._segmented_button._buttons_dict["Contact Info"].configure(
+            text=f"Contact Info ! ({contact_count})" if contact_count > 0 else "Contact Info"
+        )
+        self.todo_tabview._segmented_button._buttons_dict["Services/Materials"].configure(
+            text=f"Services/Materials ! ({services_count})" if services_count > 0 else "Services/Materials"
+        )
+        self.todo_tabview._segmented_button._buttons_dict["Unusual Durations"].configure(
+            text=f"Unusual Durations ! ({durations_count})" if durations_count > 0 else "Unusual Durations"
+        )
+        self.todo_tabview._segmented_button._buttons_dict["Flagged Visits"].configure(
+            text=f"Flagged Visits ! ({flagged_count})" if flagged_count > 0 else "Flagged Visits"
+        )
 
-        # Section 1: Missing Contact Information
+        # Populate Contact Info tab
         if missing_contact_clients:
-            contact_header = ctk.CTkLabel(
-                self.todo_scroll,
-                text=f"📞 Missing Contact Information ({len(missing_contact_clients)})",
-                font=ctk.CTkFont(size=14, weight="bold"),
-                text_color="#B8860B"
-            )
-            contact_header.grid(row=current_row, column=0, sticky="w", padx=10, pady=(5, 10))
-            current_row += 1
-
             desc_label = ctk.CTkLabel(
-                self.todo_scroll,
+                self.todo_contact_scroll,
                 text="These clients are missing email, phone, or address information",
                 font=ctk.CTkFont(size=11),
                 text_color="gray"
             )
-            desc_label.grid(row=current_row, column=0, sticky="w", padx=10, pady=(0, 10))
-            current_row += 1
+            desc_label.grid(row=0, column=0, sticky="w", padx=10, pady=(5, 10))
 
-            for client in missing_contact_clients:
-                self.create_missing_contact_card(self.todo_scroll, client, current_row)
-                current_row += 1
-
-            # Add spacing after section
-            spacer = ctk.CTkFrame(self.todo_scroll, height=20, fg_color="transparent")
-            spacer.grid(row=current_row, column=0, sticky="ew")
-            current_row += 1
-
-        # Section 2: Missing Services/Materials Data
-        if missing_data_clients:
-            missing_header = ctk.CTkLabel(
-                self.todo_scroll,
-                text=f"📝 Missing Client Data ({len(missing_data_clients)})",
-                font=ctk.CTkFont(size=14, weight="bold"),
-                text_color="#7B9EB5"
+            for idx, client in enumerate(missing_contact_clients):
+                self.create_missing_contact_card(self.todo_contact_scroll, client, idx + 1)
+        else:
+            no_issues = ctk.CTkLabel(
+                self.todo_contact_scroll,
+                text="All clients have complete contact information!",
+                font=ctk.CTkFont(size=14),
+                text_color="#5FA777"
             )
-            missing_header.grid(row=current_row, column=0, sticky="w", padx=10, pady=(5, 10))
-            current_row += 1
+            no_issues.grid(row=0, column=0, pady=50)
 
+        # Populate Services/Materials tab
+        if missing_data_clients:
             desc_label = ctk.CTkLabel(
-                self.todo_scroll,
+                self.todo_services_scroll,
                 text="These clients don't have any configured services/materials",
                 font=ctk.CTkFont(size=11),
                 text_color="gray"
             )
-            desc_label.grid(row=current_row, column=0, sticky="w", padx=10, pady=(0, 10))
-            current_row += 1
+            desc_label.grid(row=0, column=0, sticky="w", padx=10, pady=(5, 10))
 
-            for client in missing_data_clients:
-                self.create_missing_data_card(self.todo_scroll, client, current_row)
-                current_row += 1
-
-            # Add spacing after section
-            spacer = ctk.CTkFrame(self.todo_scroll, height=20, fg_color="transparent")
-            spacer.grid(row=current_row, column=0, sticky="ew")
-            current_row += 1
-
-        # Section 3: Anomalous Durations
-        if anomalous_visits:
-            anomaly_header = ctk.CTkLabel(
-                self.todo_scroll,
-                text=f"⚠ Unusual Visit Durations ({len(anomalous_visits)})",
-                font=ctk.CTkFont(size=14, weight="bold"),
-                text_color="#C97C7C"
+            for idx, client in enumerate(missing_data_clients):
+                self.create_missing_data_card(self.todo_services_scroll, client, idx + 1)
+        else:
+            no_issues = ctk.CTkLabel(
+                self.todo_services_scroll,
+                text="All clients have configured services/materials!",
+                font=ctk.CTkFont(size=14),
+                text_color="#5FA777"
             )
-            anomaly_header.grid(row=current_row, column=0, sticky="w", padx=10, pady=(5, 10))
-            current_row += 1
+            no_issues.grid(row=0, column=0, pady=50)
 
+        # Populate Unusual Durations tab
+        if anomalous_visits:
             desc_label = ctk.CTkLabel(
-                self.todo_scroll,
+                self.todo_durations_scroll,
                 text="These visits are 3x+ longer than usual for the client (possible time entry errors)",
                 font=ctk.CTkFont(size=11),
                 text_color="gray"
             )
-            desc_label.grid(row=current_row, column=0, sticky="w", padx=10, pady=(0, 10))
-            current_row += 1
+            desc_label.grid(row=0, column=0, sticky="w", padx=10, pady=(5, 10))
 
-            for visit in anomalous_visits:
-                self.create_anomaly_card(self.todo_scroll, visit, current_row)
-                current_row += 1
-
-            # Add spacing between sections
-            if flagged_visits:
-                spacer = ctk.CTkFrame(self.todo_scroll, height=20, fg_color="transparent")
-                spacer.grid(row=current_row, column=0, sticky="ew")
-                current_row += 1
-
-        # Section 4: Manually Flagged Visits
-        if flagged_visits:
-            flagged_header = ctk.CTkLabel(
-                self.todo_scroll,
-                text=f"🚩 Manually Flagged Visits ({len(flagged_visits)})",
-                font=ctk.CTkFont(size=14, weight="bold"),
-                text_color="orange"
+            for idx, visit in enumerate(anomalous_visits):
+                self.create_anomaly_card(self.todo_durations_scroll, visit, idx + 1)
+        else:
+            no_issues = ctk.CTkLabel(
+                self.todo_durations_scroll,
+                text="No unusual visit durations detected!",
+                font=ctk.CTkFont(size=14),
+                text_color="#5FA777"
             )
-            flagged_header.grid(row=current_row, column=0, sticky="w", padx=10, pady=(5, 10))
-            current_row += 1
+            no_issues.grid(row=0, column=0, pady=50)
 
-            for visit in flagged_visits:
-                self.create_review_card(self.todo_scroll, visit, current_row)
-                current_row += 1
+        # Populate Flagged Visits tab
+        if flagged_visits:
+            desc_label = ctk.CTkLabel(
+                self.todo_flagged_scroll,
+                text="These visits have been manually flagged for review",
+                font=ctk.CTkFont(size=11),
+                text_color="gray"
+            )
+            desc_label.grid(row=0, column=0, sticky="w", padx=10, pady=(5, 10))
+
+            for idx, visit in enumerate(flagged_visits):
+                self.create_review_card(self.todo_flagged_scroll, visit, idx + 1)
+        else:
+            no_issues = ctk.CTkLabel(
+                self.todo_flagged_scroll,
+                text="No flagged visits!",
+                font=ctk.CTkFont(size=14),
+                text_color="#5FA777"
+            )
+            no_issues.grid(row=0, column=0, pady=50)
 
     def create_anomaly_card(self, parent, visit, row):
         """Create a card showing a visit with anomalous duration."""
@@ -3294,14 +3308,16 @@ class LandscapingApp(ctk.CTk):
         """Navigate to client contact information."""
         # Switch to Clients tab
         self.tabview.set("Clients")
-        # Show this specific client's info
+        # Refresh client list and show this specific client's info
+        self.refresh_clients_list()
         self.show_client_details(client_id)
 
     def go_to_client_materials(self, client_id, client_name):
         """Navigate to client materials configuration."""
         # Switch to Clients tab
         self.tabview.set("Clients")
-        # Show this specific client's info
+        # Refresh client list and show this specific client's info
+        self.refresh_clients_list()
         self.show_client_details(client_id)
 
     def mark_client_no_services(self, client_id):
