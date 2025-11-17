@@ -49,11 +49,31 @@ class OCRScanner:
             Extracted text or None if failed
         """
         try:
-            # Read and encode image
-            with open(image_path, 'rb') as f:
-                image_data = f.read()
+            # Read image and resize if too large (OCR.space free tier has size limits)
+            if Image is None:
+                # PIL not available, just read the file
+                with open(image_path, 'rb') as f:
+                    image_data = f.read()
+            else:
+                # PIL is available, use it to resize if needed
+                img = Image.open(image_path)
 
-            # Prepare request to OCR.space API (free tier, no API key needed)
+                # Resize if larger than 1MB when saved
+                max_size = 1024 * 1024  # 1MB
+                img_byte_arr = io.BytesIO()
+                img.save(img_byte_arr, format='JPEG', quality=85)
+
+                # If too large, resize
+                if len(img_byte_arr.getvalue()) > max_size:
+                    # Resize to 50% and try again
+                    new_size = (img.width // 2, img.height // 2)
+                    img = img.resize(new_size, Image.Resampling.LANCZOS)
+                    img_byte_arr = io.BytesIO()
+                    img.save(img_byte_arr, format='JPEG', quality=75)
+
+                image_data = img_byte_arr.getvalue()
+
+            # Prepare request to OCR.space API (free tier)
             url = 'https://api.ocr.space/parse/image'
 
             # Prepare the payload
@@ -62,16 +82,15 @@ class OCRScanner:
             }
 
             payload = {
-                'apikey': 'helloworld',  # Free API key for basic use
+                'apikey': 'K87899142388957',  # Public free API key
                 'language': 'eng',
                 'isOverlayRequired': 'false',
-                'OCREngine': '2',  # Use OCR Engine 2 for better accuracy
-                'scale': 'true',
-                'isTable': 'false'
+                'OCREngine': '1',  # Use OCR Engine 1 (more permissive on free tier)
+                'scale': 'true'
             }
 
             # Make request with timeout
-            response = requests.post(url, files=files, data=payload, timeout=30)
+            response = requests.post(url, files=files, data=payload, timeout=60)
 
             if response.status_code == 200:
                 result = response.json()
@@ -195,9 +214,13 @@ class OCRScanner:
         records = []
         lines = text.split('\n')
 
-        # Patterns for matching
-        date_pattern = r'(\d{4}-\d{2}-\d{2}|\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4})'
-        time_pattern = r'(\d{1,2}:\d{2})\s*[-to]+\s*(\d{1,2}:\d{2})'
+        # Patterns for matching (enhanced for handwritten text)
+        date_pattern = r'(\d{4}-\d{2}-\d{2}|\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})'
+        # Enhanced time pattern to handle handwritten variations:
+        # - Handles missing colons (930 instead of 9:30)
+        # - Handles periods instead of colons (9.30)
+        # - Handles various separators (-, to, ~)
+        time_pattern = r'(\d{1,2}[:.\s]?\d{2})\s*[-to~]+\s*(\d{1,2}[:.\s]?\d{2})'
 
         current_record = {}
 
@@ -223,8 +246,12 @@ class OCRScanner:
             # Look for time range
             time_match = re.search(time_pattern, line)
             if time_match:
-                current_record['start_time'] = time_match.group(1)
-                current_record['end_time'] = time_match.group(2)
+                # Normalize times to handle handwritten variations
+                start_time = self._normalize_time(time_match.group(1))
+                end_time = self._normalize_time(time_match.group(2))
+                if start_time and end_time:
+                    current_record['start_time'] = start_time
+                    current_record['end_time'] = end_time
 
             # If we don't have a client name yet, try to extract it
             if 'client_name' not in current_record and line:
@@ -273,6 +300,42 @@ class OCRScanner:
                 return date_obj.strftime('%Y-%m-%d')
             except ValueError:
                 continue
+
+        return None
+
+    def _normalize_time(self, time_str: str) -> Optional[str]:
+        """
+        Normalize handwritten time formats to HH:MM.
+
+        Args:
+            time_str: Time string in various formats
+
+        Returns:
+            Normalized time string (HH:MM) or None if invalid
+        """
+        # Clean up the string
+        time_str = time_str.strip().replace(' ', '')
+
+        # Handle period instead of colon (9.30 -> 9:30)
+        time_str = time_str.replace('.', ':')
+
+        # Handle missing colon for times like "930" or "1145"
+        if ':' not in time_str and len(time_str) in [3, 4]:
+            if len(time_str) == 3:  # e.g., "930"
+                time_str = time_str[0] + ':' + time_str[1:3]
+            else:  # e.g., "1145"
+                time_str = time_str[0:2] + ':' + time_str[2:4]
+
+        # Validate format
+        try:
+            parts = time_str.split(':')
+            if len(parts) == 2:
+                hour = int(parts[0])
+                minute = int(parts[1])
+                if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    return f"{hour:02d}:{minute:02d}"
+        except:
+            pass
 
         return None
 
@@ -366,12 +429,13 @@ class OCRScanner:
 
         return record
 
-    def scan_and_parse_visits(self, image_path: str) -> Dict:
+    def scan_and_parse_visits(self, image_path: str, debug: bool = False) -> Dict:
         """
         Scan an image and parse visit records with validation.
 
         Args:
             image_path: Path to the image file
+            debug: If True, print debugging information
 
         Returns:
             Dictionary with scanned text, parsed records, and status
@@ -380,23 +444,40 @@ class OCRScanner:
             'success': False,
             'text': None,
             'records': [],
-            'error': None
+            'error': None,
+            'debug_info': {}
         }
 
         # Scan the image
         text = self.scan_image(image_path)
 
-        if not text:
-            result['error'] = 'Failed to extract text from image'
+        if debug:
+            print(f"OCR extracted {len(text) if text else 0} characters")
+            if text:
+                print(f"First 500 chars: {text[:500]}")
+
+        if not text or len(text) < 10:
+            result['error'] = 'Failed to extract text from image or text too short'
+            result['debug_info']['text_length'] = len(text) if text else 0
             return result
 
         result['text'] = text
+        result['debug_info']['text_length'] = len(text)
 
         # Parse visit records
         records = self.parse_visit_records(text)
 
+        if debug:
+            print(f"Parsed {len(records)} records")
+            for i, rec in enumerate(records[:3]):  # Show first 3
+                print(f"Record {i+1}: {rec}")
+
+        result['debug_info']['raw_records_count'] = len(records)
+
         if not records:
-            result['error'] = 'No valid visit records found in the image'
+            result['error'] = 'No valid visit records found in the image. The image may be handwritten or in table format that needs manual review.'
+            # Still return the text so user can see what was extracted
+            result['success'] = False
             return result
 
         # Validate and calculate durations
@@ -407,6 +488,7 @@ class OCRScanner:
 
         result['records'] = validated_records
         result['success'] = True
+        result['debug_info']['validated_records_count'] = len(validated_records)
 
         return result
 
