@@ -160,6 +160,34 @@ class Database:
 
         self.connection.commit()
 
+        # Create indexes for performance optimization
+        self.create_indexes()
+
+    def create_indexes(self):
+        """Create database indexes to optimize query performance."""
+        cursor = self.connection.cursor()
+
+        # Critical indexes for JOIN operations and WHERE clauses
+        indexes = [
+            "CREATE INDEX IF NOT EXISTS idx_visits_client_id ON visits(client_id)",
+            "CREATE INDEX IF NOT EXISTS idx_visits_date ON visits(visit_date)",
+            "CREATE INDEX IF NOT EXISTS idx_visit_materials_visit_id ON visit_materials(visit_id)",
+            "CREATE INDEX IF NOT EXISTS idx_visit_materials_material_id ON visit_materials(material_id)",
+            "CREATE INDEX IF NOT EXISTS idx_client_materials_client_id ON client_materials(client_id)",
+            "CREATE INDEX IF NOT EXISTS idx_client_materials_material_id ON client_materials(material_id)",
+            "CREATE INDEX IF NOT EXISTS idx_clients_active ON clients(is_active)",
+            "CREATE INDEX IF NOT EXISTS idx_clients_bill_to ON clients(bill_to)",
+        ]
+
+        for index_sql in indexes:
+            try:
+                cursor.execute(index_sql)
+            except sqlite3.OperationalError:
+                # Index might already exist
+                pass
+
+        self.connection.commit()
+
     # ==================== CLIENT OPERATIONS ====================
 
     def add_client(self, name: str, monthly_charge: float, email: str = "",
@@ -417,6 +445,27 @@ class Database:
         """, (client_id,))
         return [dict(row) for row in cursor.fetchall()]
 
+    def get_visits_by_date(self, visit_date: str, active_only: bool = True) -> List[Dict]:
+        """
+        Get all visits for a specific date with client info in a single optimized query.
+
+        Args:
+            visit_date: Date in YYYY-MM-DD format
+            active_only: Whether to only include active clients
+
+        Returns:
+            List of visits with client_name included
+        """
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT v.*, c.name as client_name
+            FROM visits v
+            JOIN clients c ON v.client_id = c.id
+            WHERE v.visit_date = ? AND (c.is_active = 1 OR ? = 0)
+            ORDER BY v.start_time ASC
+        """, (visit_date, 1 if active_only else 0))
+        return [dict(row) for row in cursor.fetchall()]
+
     def update_visit(self, visit_id: int, **kwargs):
         """Update visit information."""
         allowed_fields = ['visit_date', 'start_time', 'end_time', 'duration_minutes', 'notes', 'needs_review']
@@ -449,6 +498,7 @@ class Database:
     def get_visits_with_anomalous_durations(self, threshold_percent: float = 300.0) -> List[Dict]:
         """
         Get visits where duration is significantly different from the client's average.
+        Optimized to use a single SQL query with window functions.
 
         Args:
             threshold_percent: Percentage threshold (e.g., 300 means 3x the average)
@@ -458,54 +508,32 @@ class Database:
         """
         cursor = self.connection.cursor()
 
-        # Get all clients with multiple visits (need at least 2 for comparison)
+        # Optimized query using window functions to calculate averages in SQL
         cursor.execute("""
-            SELECT client_id, COUNT(*) as visit_count
-            FROM visits
-            GROUP BY client_id
-            HAVING visit_count >= 2
-        """)
-        clients_with_visits = [row['client_id'] for row in cursor.fetchall()]
+            WITH client_stats AS (
+                SELECT
+                    client_id,
+                    AVG(duration_minutes) as avg_duration,
+                    COUNT(*) as total_visits
+                FROM visits
+                GROUP BY client_id
+                HAVING total_visits >= 2
+            )
+            SELECT
+                v.*,
+                c.name as client_name,
+                cs.avg_duration,
+                cs.total_visits,
+                (v.duration_minutes * 100.0 / cs.avg_duration) as percent_of_avg
+            FROM visits v
+            JOIN clients c ON v.client_id = c.id
+            JOIN client_stats cs ON v.client_id = cs.client_id
+            WHERE cs.avg_duration > 0
+              AND (v.duration_minutes * 100.0 / cs.avg_duration) >= ?
+            ORDER BY percent_of_avg DESC
+        """, (threshold_percent,))
 
-        anomalous_visits = []
-
-        for client_id in clients_with_visits:
-            # Get all visits for this client
-            cursor.execute("""
-                SELECT v.*, c.name as client_name
-                FROM visits v
-                JOIN clients c ON v.client_id = c.id
-                WHERE v.client_id = ?
-                ORDER BY v.visit_date DESC
-            """, (client_id,))
-            visits = [dict(row) for row in cursor.fetchall()]
-
-            if len(visits) < 2:
-                continue
-
-            # Calculate average duration for this client
-            durations = [v['duration_minutes'] for v in visits]
-            avg_duration = sum(durations) / len(durations)
-
-            # Find visits that are outliers
-            for visit in visits:
-                if avg_duration == 0:
-                    continue
-
-                # Calculate percentage difference
-                percent_of_avg = (visit['duration_minutes'] / avg_duration) * 100
-
-                # Flag if significantly above threshold
-                if percent_of_avg >= threshold_percent:
-                    visit['avg_duration'] = avg_duration
-                    visit['percent_of_avg'] = percent_of_avg
-                    visit['total_visits'] = len(visits)
-                    anomalous_visits.append(visit)
-
-        # Sort by most extreme first
-        anomalous_visits.sort(key=lambda x: x['percent_of_avg'], reverse=True)
-
-        return anomalous_visits
+        return [dict(row) for row in cursor.fetchall()]
 
     def get_visit_by_id(self, visit_id: int) -> Optional[Dict]:
         """Get a specific visit by ID."""
@@ -724,6 +752,140 @@ class Database:
         }
 
     def get_all_client_statistics(self, active_only: bool = True) -> List[Dict]:
-        """Get statistics for all clients."""
-        clients = self.get_all_clients(active_only)
-        return [self.get_client_statistics(client['id']) for client in clients]
+        """Get statistics for all clients using optimized single query."""
+        from datetime import datetime
+        cursor = self.connection.cursor()
+
+        current_year = datetime.now().year
+        hourly_rate = self.get_hourly_rate()
+
+        # Optimized query using CTEs to get all stats in one query
+        cursor.execute("""
+            WITH
+            -- Get all visit counts and time statistics per client
+            visit_stats AS (
+                SELECT
+                    client_id,
+                    COUNT(*) as visit_count,
+                    SUM(CASE WHEN strftime('%Y', visit_date) = ? THEN 1 ELSE 0 END) as visits_this_year,
+                    COALESCE(AVG(duration_minutes), 0) as avg_duration,
+                    COALESCE(MIN(duration_minutes), 0) as min_duration,
+                    COALESCE(MAX(duration_minutes), 0) as max_duration,
+                    COALESCE(SUM(duration_minutes), 0) as total_duration
+                FROM visits
+                GROUP BY client_id
+            ),
+            -- Get configured material costs per client (materials only)
+            configured_materials AS (
+                SELECT
+                    cm.client_id,
+                    COALESCE(SUM(COALESCE(cm.custom_cost, m.default_cost) * cm.multiplier), 0) as configured_materials_yearly
+                FROM client_materials cm
+                JOIN materials m ON cm.material_id = m.id
+                WHERE cm.is_enabled = 1 AND m.material_type = 'material'
+                GROUP BY cm.client_id
+            ),
+            -- Get configured service costs per client (services only)
+            configured_services AS (
+                SELECT
+                    cm.client_id,
+                    COALESCE(SUM(COALESCE(cm.custom_cost, m.default_cost) * cm.multiplier), 0) as configured_services_yearly
+                FROM client_materials cm
+                JOIN materials m ON cm.material_id = m.id
+                WHERE cm.is_enabled = 1 AND m.material_type = 'service'
+                GROUP BY cm.client_id
+            ),
+            -- Get visit material costs per client (materials only)
+            visit_materials_costs AS (
+                SELECT
+                    v.client_id,
+                    COALESCE(SUM(vm.quantity * vm.cost_at_time), 0) as visit_material_cost
+                FROM visits v
+                LEFT JOIN visit_materials vm ON v.id = vm.visit_id
+                LEFT JOIN materials m ON vm.material_id = m.id
+                WHERE m.material_type = 'material'
+                GROUP BY v.client_id
+            ),
+            -- Get visit service costs per client (services only)
+            visit_services_costs AS (
+                SELECT
+                    v.client_id,
+                    COALESCE(SUM(vm.quantity * vm.cost_at_time), 0) as visit_service_cost
+                FROM visits v
+                LEFT JOIN visit_materials vm ON v.id = vm.visit_id
+                LEFT JOIN materials m ON vm.material_id = m.id
+                WHERE m.material_type = 'service'
+                GROUP BY v.client_id
+            )
+            -- Main query joining all CTEs
+            SELECT
+                c.id as client_id,
+                c.name as client_name,
+                c.monthly_charge as actual_monthly_charge,
+                COALESCE(vs.visit_count, 0) as visit_count,
+                COALESCE(vs.visits_this_year, 0) as visits_this_year,
+                COALESCE(vs.avg_duration, 0) as avg_duration,
+                COALESCE(vs.min_duration, 0) as min_duration,
+                COALESCE(vs.max_duration, 0) as max_duration,
+                COALESCE(vs.total_duration, 0) as total_duration,
+                COALESCE(cm.configured_materials_yearly, 0) as configured_materials_cost_yearly,
+                COALESCE(cs.configured_services_yearly, 0) as configured_services_yearly,
+                COALESCE(vmc.visit_material_cost, 0) as visit_material_cost,
+                COALESCE(vsc.visit_service_cost, 0) as visit_service_cost
+            FROM clients c
+            LEFT JOIN visit_stats vs ON c.id = vs.client_id
+            LEFT JOIN configured_materials cm ON c.id = cm.client_id
+            LEFT JOIN configured_services cs ON c.id = cs.client_id
+            LEFT JOIN visit_materials_costs vmc ON c.id = vmc.client_id
+            LEFT JOIN visit_services_costs vsc ON c.id = vsc.client_id
+            WHERE c.is_active = ?
+            ORDER BY c.name
+        """, (str(current_year), 1 if active_only else 0))
+
+        results = []
+        for row in cursor.fetchall():
+            # Calculate derived fields
+            total_material_cost = row['configured_materials_cost_yearly'] + row['visit_material_cost']
+            total_service_cost = row['configured_services_yearly'] + row['visit_service_cost']
+            total_materials_services_cost = total_material_cost + total_service_cost
+
+            total_labor_cost = (row['total_duration'] / 60) * 2 * hourly_rate
+            total_cost = total_labor_cost + total_materials_services_cost
+
+            visit_count = row['visit_count'] if row['visit_count'] > 0 else 1
+            avg_cost_per_visit = total_cost / visit_count
+
+            avg_labor_cost_per_visit = (row['avg_duration'] / 60) * 2 * hourly_rate
+            projected_yearly_labor_cost = avg_labor_cost_per_visit * 52
+
+            est_yearly_cost = projected_yearly_labor_cost + row['configured_materials_cost_yearly'] + row['configured_services_yearly']
+            proposed_monthly_rate = est_yearly_cost / 12
+
+            profit_loss = row['actual_monthly_charge'] - proposed_monthly_rate
+            is_profitable = profit_loss >= 0
+
+            results.append({
+                'client_id': row['client_id'],
+                'client_name': row['client_name'],
+                'visit_count': row['visit_count'],
+                'visits_this_year': row['visits_this_year'],
+                'total_material_cost': round(total_material_cost, 2),
+                'total_service_cost': round(total_service_cost, 2),
+                'total_materials_services_cost': round(total_materials_services_cost, 2),
+                'configured_materials_cost_yearly': round(row['configured_materials_cost_yearly'], 2),
+                'configured_services_cost_yearly': round(row['configured_services_yearly'], 2),
+                'projected_yearly_labor_cost': round(projected_yearly_labor_cost, 2),
+                'avg_time_per_visit': round(row['avg_duration'], 1),
+                'min_time_per_visit': round(row['min_duration'], 1),
+                'max_time_per_visit': round(row['max_duration'], 1),
+                'total_labor_cost': round(total_labor_cost, 2),
+                'avg_cost_per_visit': round(avg_cost_per_visit, 2),
+                'est_yearly_cost': round(est_yearly_cost, 2),
+                'proposed_monthly_rate': round(proposed_monthly_rate, 2),
+                'actual_monthly_charge': round(row['actual_monthly_charge'], 2),
+                'monthly_profit_loss': round(profit_loss, 2),
+                'is_profitable': is_profitable,
+                'hourly_rate': round(hourly_rate, 2)
+            })
+
+        return results

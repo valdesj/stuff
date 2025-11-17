@@ -13,6 +13,15 @@ from tkcalendar import DateEntry
 from typing import Optional
 from collections import defaultdict
 
+# Matplotlib imports (moved to module level for performance)
+import matplotlib
+matplotlib.use('TkAgg')
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.dates as mdates
+import numpy as np
+from scipy.interpolate import make_interp_spline
+
 
 # Configure CustomTkinter
 ctk.set_appearance_mode("dark")  # Dark mode
@@ -343,8 +352,8 @@ class LandscapingApp(ctk.CTk):
         for widget in self.dashboard_client_frame.winfo_children():
             widget.destroy()
 
-        # Get all client statistics
-        stats_list = self.db.get_all_client_statistics(active_only=True)
+        # Use cached client statistics instead of re-querying
+        stats_list = self.all_client_stats
 
         if not stats_list:
             return
@@ -484,15 +493,6 @@ class LandscapingApp(ctk.CTk):
 
     def update_visualization(self, *args):
         """Update the visualization chart based on current client and mode."""
-        # Lazy import matplotlib and related libraries (optimization)
-        import matplotlib
-        matplotlib.use('TkAgg')
-        from matplotlib.figure import Figure
-        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-        import matplotlib.dates as mdates
-        import numpy as np
-        from scipy.interpolate import make_interp_spline
-
         # Clear existing visualization
         for widget in self.viz_canvas_frame.winfo_children():
             widget.destroy()
@@ -2991,15 +2991,8 @@ class LandscapingApp(ctk.CTk):
         db_date = date_obj.strftime('%Y-%m-%d')
         date_str = date_obj.strftime('%m/%d/%Y')
 
-        # Get all visits for this date across all clients
-        all_visits = []
-        clients = self.db.get_all_clients(active_only=True)
-        for client in clients:
-            visits = self.db.get_client_visits(client['id'])
-            for visit in visits:
-                if visit['visit_date'] == db_date:
-                    visit['client_name'] = client['name']
-                    all_visits.append(visit)
+        # Get all visits for this date in a single optimized query
+        all_visits = self.db.get_visits_by_date(db_date, active_only=True)
 
         if not all_visits:
             no_visits = ctk.CTkLabel(
