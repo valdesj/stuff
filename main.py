@@ -549,10 +549,9 @@ class LandscapingApp(ctk.CTk):
                 )
                 info_label.grid(row=0, column=2, sticky="w", padx=(2, 0))
 
-                # Create tooltip
+                # Create click-based tooltip
                 def create_tooltip(widget, text):
                     widget.tooltip = None
-                    widget.tooltip_timer = None
 
                     def destroy_tooltip():
                         if hasattr(widget, 'tooltip') and widget.tooltip:
@@ -562,16 +561,13 @@ class LandscapingApp(ctk.CTk):
                                 pass
                             widget.tooltip = None
 
-                    def show_tooltip(event):
-                        # Cancel any pending hide
-                        if widget.tooltip_timer:
-                            widget.after_cancel(widget.tooltip_timer)
-                            widget.tooltip_timer = None
+                    def toggle_tooltip(event):
+                        # If tooltip exists, close it
+                        if widget.tooltip:
+                            destroy_tooltip()
+                            return
 
-                        # Destroy any existing tooltip first
-                        destroy_tooltip()
-
-                        # Create new tooltip
+                        # Otherwise, create new tooltip
                         tooltip = ctk.CTkToplevel()
                         tooltip.wm_overrideredirect(True)
                         tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
@@ -588,23 +584,20 @@ class LandscapingApp(ctk.CTk):
 
                         widget.tooltip = tooltip
 
-                        # Also hide tooltip if mouse enters the tooltip itself
-                        def on_tooltip_enter(e):
-                            hide_tooltip(e)
+                        # Close tooltip when clicking anywhere else
+                        def close_on_click(e):
+                            destroy_tooltip()
+                            # Unbind the global click handler
+                            try:
+                                self.unbind_all("<Button-1>")
+                            except:
+                                pass
 
-                        tooltip.bind("<Enter>", on_tooltip_enter)
+                        # Delay binding to avoid immediate closure
+                        self.after(100, lambda: self.bind_all("<Button-1>", close_on_click))
 
-                    def hide_tooltip(event):
-                        # Cancel any pending timer
-                        if widget.tooltip_timer:
-                            widget.after_cancel(widget.tooltip_timer)
-
-                        # Immediately destroy tooltip
-                        destroy_tooltip()
-                        widget.tooltip_timer = None
-
-                    widget.bind("<Enter>", show_tooltip)
-                    widget.bind("<Leave>", hide_tooltip)
+                    # Toggle tooltip on click
+                    widget.bind("<Button-1>", toggle_tooltip)
 
                 create_tooltip(info_label, tooltip_text)
 
