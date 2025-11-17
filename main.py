@@ -371,15 +371,15 @@ class LandscapingApp(ctk.CTk):
             client_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
             client_frame.pack(fill="x", padx=5, pady=3)
 
-            # Determine color and icon based on profitability
+            # Determine color and icon based on profitability (muted colors for dark theme)
             if stats['is_profitable']:
-                border_color = "green"
+                border_color = "#4A7C59"  # Muted dark green
                 icon = "✓"
-                text_color = "green"
+                text_color = "#5FA777"  # Softer green for text
             else:
-                border_color = "red"
+                border_color = "#8B4C4C"  # Muted dark red
                 icon = "⚠"
-                text_color = "red"
+                text_color = "#C97C7C"  # Softer red for text
 
             # Client button
             client_btn = ctk.CTkButton(
@@ -564,15 +564,15 @@ class LandscapingApp(ctk.CTk):
 
     def create_client_card(self, parent, stats, row):
         """Create a visual card showing client statistics."""
-        # Determine color based on profitability
+        # Determine color based on profitability (muted colors for dark theme)
         if stats['is_profitable']:
-            border_color = "green"
+            border_color = "#4A7C59"  # Muted dark green
             status_text = "✓ PROFITABLE"
-            status_color = "green"
+            status_color = "#5FA777"  # Softer green
         else:
-            border_color = "red"
+            border_color = "#8B4C4C"  # Muted dark red
             status_text = "⚠ LOSING MONEY"
-            status_color = "red"
+            status_color = "#C97C7C"  # Softer red
 
         # Card frame
         card = ctk.CTkFrame(parent, border_width=1, border_color=border_color)
