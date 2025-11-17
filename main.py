@@ -9,6 +9,7 @@ from ocr_scanner import OCRScanner
 from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
+from tkcalendar import DateEntry
 from typing import Optional
 from collections import defaultdict
 
@@ -2144,16 +2145,17 @@ class LandscapingApp(ctk.CTk):
         )
         date_label.pack(side=tk.LEFT, padx=10, pady=15)
 
-        # Date entry (MM/DD/YYYY format)
-        self.daily_date_entry = ctk.CTkEntry(
+        # Calendar picker (DateEntry widget)
+        self.daily_date_picker = DateEntry(
             date_frame,
-            placeholder_text="MM/DD/YYYY",
-            font=ctk.CTkFont(size=13),
-            height=35,
-            width=150
+            width=18,
+            background='darkblue',
+            foreground='white',
+            borderwidth=2,
+            font=('Arial', 12),
+            date_pattern='mm/dd/yyyy'
         )
-        self.daily_date_entry.insert(0, datetime.now().strftime("%m/%d/%Y"))
-        self.daily_date_entry.pack(side=tk.LEFT, padx=10, pady=15)
+        self.daily_date_picker.pack(side=tk.LEFT, padx=10, pady=15)
 
         # Show button
         show_btn = ctk.CTkButton(
@@ -2165,30 +2167,30 @@ class LandscapingApp(ctk.CTk):
         )
         show_btn.pack(side=tk.LEFT, padx=10, pady=15)
 
-        # Quick date buttons
-        today_btn = ctk.CTkButton(
+        # Navigation buttons
+        prev_btn = ctk.CTkButton(
             date_frame,
-            text="Today",
-            command=lambda: self.set_daily_date(datetime.now()),
-            font=ctk.CTkFont(size=12),
-            height=30,
-            width=80,
-            fg_color="transparent",
-            border_width=1
-        )
-        today_btn.pack(side=tk.LEFT, padx=5, pady=15)
-
-        yesterday_btn = ctk.CTkButton(
-            date_frame,
-            text="Yesterday",
-            command=lambda: self.set_daily_date(datetime.now() - timedelta(days=1)),
+            text="◀ Previous",
+            command=self.go_to_previous_day,
             font=ctk.CTkFont(size=12),
             height=30,
             width=100,
             fg_color="transparent",
             border_width=1
         )
-        yesterday_btn.pack(side=tk.LEFT, padx=5, pady=15)
+        prev_btn.pack(side=tk.LEFT, padx=5, pady=15)
+
+        next_btn = ctk.CTkButton(
+            date_frame,
+            text="Next ▶",
+            command=self.go_to_next_day,
+            font=ctk.CTkFont(size=12),
+            height=30,
+            width=100,
+            fg_color="transparent",
+            border_width=1
+        )
+        next_btn.pack(side=tk.LEFT, padx=5, pady=15)
 
         # Schedule display frame
         self.daily_schedule_frame = ctk.CTkScrollableFrame(self.tab_daily)
@@ -2198,10 +2200,18 @@ class LandscapingApp(ctk.CTk):
         # Initial load
         self.load_daily_schedule()
 
-    def set_daily_date(self, date_obj):
-        """Set the date entry to a specific date."""
-        self.daily_date_entry.delete(0, tk.END)
-        self.daily_date_entry.insert(0, date_obj.strftime("%m/%d/%Y"))
+    def go_to_previous_day(self):
+        """Navigate to the previous day."""
+        current_date = self.daily_date_picker.get_date()
+        previous_date = current_date - timedelta(days=1)
+        self.daily_date_picker.set_date(previous_date)
+        self.load_daily_schedule()
+
+    def go_to_next_day(self):
+        """Navigate to the next day."""
+        current_date = self.daily_date_picker.get_date()
+        next_date = current_date + timedelta(days=1)
+        self.daily_date_picker.set_date(next_date)
         self.load_daily_schedule()
 
     def load_daily_schedule(self):
@@ -2210,20 +2220,10 @@ class LandscapingApp(ctk.CTk):
         for widget in self.daily_schedule_frame.winfo_children():
             widget.destroy()
 
-        # Parse date
-        date_str = self.daily_date_entry.get().strip()
-        try:
-            date_obj = datetime.strptime(date_str, '%m/%d/%Y')
-            db_date = date_obj.strftime('%Y-%m-%d')
-        except ValueError:
-            error_label = ctk.CTkLabel(
-                self.daily_schedule_frame,
-                text="Invalid date format. Please use MM/DD/YYYY",
-                font=ctk.CTkFont(size=14),
-                text_color="red"
-            )
-            error_label.pack(pady=50)
-            return
+        # Get date from calendar picker
+        date_obj = self.daily_date_picker.get_date()
+        db_date = date_obj.strftime('%Y-%m-%d')
+        date_str = date_obj.strftime('%m/%d/%Y')
 
         # Get all visits for this date across all clients
         all_visits = []
