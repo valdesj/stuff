@@ -737,6 +737,9 @@ class LandscapingApp(ctk.CTk):
         import numpy as np
         from collections import defaultdict
 
+        # Track temporary graph file for cleanup
+        temp_graph_path = None
+
         # Get PDF export directory from settings
         pdf_dir = self.db.get_setting('pdf_export_path', '')
         if not pdf_dir or not os.path.exists(pdf_dir):
@@ -947,16 +950,15 @@ class LandscapingApp(ctk.CTk):
 
                 # Save to temporary file
                 temp_graph = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
-                plt.savefig(temp_graph.name, dpi=150, bbox_inches='tight', facecolor='white')
+                temp_graph_path = temp_graph.name  # Store path for cleanup after PDF build
+                temp_graph.close()  # Close the file handle
+                plt.savefig(temp_graph_path, dpi=150, bbox_inches='tight', facecolor='white')
                 plt.close(fig)
 
                 # Add graph to PDF
-                graph_image = RLImage(temp_graph.name, width=6*inch, height=3*inch)
+                graph_image = RLImage(temp_graph_path, width=6*inch, height=3*inch)
                 story.append(graph_image)
                 story.append(Spacer(1, 0.3*inch))
-
-                # Clean up temp file
-                os.unlink(temp_graph.name)
 
             story.append(Spacer(1, 0.2*inch))
         else:
@@ -1021,6 +1023,14 @@ class LandscapingApp(ctk.CTk):
         # Build PDF
         try:
             doc.build(story)
+
+            # Clean up temporary graph file after PDF is built
+            if temp_graph_path and os.path.exists(temp_graph_path):
+                try:
+                    os.unlink(temp_graph_path)
+                except:
+                    pass  # Ignore cleanup errors
+
             messagebox.showinfo(
                 "Success",
                 f"PDF report exported successfully!\n\nSaved to:\n{filepath}"
@@ -1038,6 +1048,12 @@ class LandscapingApp(ctk.CTk):
                     subprocess.call(['xdg-open', filepath])
 
         except Exception as e:
+            # Clean up temporary graph file on error
+            if temp_graph_path and os.path.exists(temp_graph_path):
+                try:
+                    os.unlink(temp_graph_path)
+                except:
+                    pass  # Ignore cleanup errors
             messagebox.showerror("Error", f"Failed to create PDF:\n{str(e)}")
 
     # ==================== CLIENTS TAB ====================
