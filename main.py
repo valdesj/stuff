@@ -725,10 +725,17 @@ class LandscapingApp(ctk.CTk):
         from reportlab.lib.pagesizes import letter
         from reportlab.lib import colors
         from reportlab.lib.units import inch
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image as RLImage
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
         import os
+        import tempfile
+        import matplotlib
+        matplotlib.use('Agg')  # Use non-interactive backend for PDF generation
+        import matplotlib.pyplot as plt
+        import matplotlib.dates as mdates
+        import numpy as np
+        from collections import defaultdict
 
         # Get PDF export directory from settings
         pdf_dir = self.db.get_setting('pdf_export_path', '')
@@ -888,6 +895,70 @@ class LandscapingApp(ctk.CTk):
 
             story.append(visit_history_table)
             story.append(Spacer(1, 0.3*inch))
+
+            # Create visualization graph for visit durations
+            story.append(Paragraph(f"Visit Duration Trends ({working_year})", heading_style))
+
+            # Group visits by month and calculate averages
+            monthly_data = defaultdict(list)
+            for visit in year_visits:
+                visit_date = datetime.strptime(visit['visit_date'], '%Y-%m-%d')
+                month_key = visit_date.replace(day=1)  # First day of month as key
+                monthly_data[month_key].append(visit['duration_minutes'])
+
+            # Calculate monthly averages
+            months = sorted(monthly_data.keys())
+            averages = [np.mean(monthly_data[month]) for month in months]
+
+            if len(months) > 0:
+                # Create the graph
+                fig, ax = plt.subplots(figsize=(7, 3.5), facecolor='white')
+                ax.set_facecolor('white')
+
+                # Plot data
+                ax.plot(months, averages, marker='o', linestyle='-',
+                       linewidth=2.5, markersize=7, color='#0078D4', alpha=0.8)
+
+                # Customize axes
+                ax.set_xlabel("Month", fontsize=11, fontweight='bold', color='#333333')
+                ax.set_ylabel("Average Duration (minutes)", fontsize=11, fontweight='bold', color='#333333')
+                ax.set_title(f"Average Visit Duration by Month - {working_year}",
+                           fontsize=13, fontweight='bold', color='#333333', pad=10)
+
+                # Format x-axis to show month names only
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%b'))
+                ax.xaxis.set_major_locator(mdates.MonthLocator())
+
+                # Customize y-axis to show only 0 and max value
+                max_duration = max(averages)
+                ax.set_ylim(0, max_duration * 1.1)  # Add 10% padding at top
+                ax.set_yticks([0, max_duration])
+                ax.set_yticklabels(['0', f'{max_duration:.0f}'])
+
+                # Styling
+                ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5, axis='y')
+                ax.tick_params(colors='#333333', labelsize=10)
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.spines['left'].set_color('#CCCCCC')
+                ax.spines['bottom'].set_color('#CCCCCC')
+
+                plt.tight_layout()
+
+                # Save to temporary file
+                temp_graph = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+                plt.savefig(temp_graph.name, dpi=150, bbox_inches='tight', facecolor='white')
+                plt.close(fig)
+
+                # Add graph to PDF
+                graph_image = RLImage(temp_graph.name, width=6*inch, height=3*inch)
+                story.append(graph_image)
+                story.append(Spacer(1, 0.3*inch))
+
+                # Clean up temp file
+                os.unlink(temp_graph.name)
+
+            story.append(Spacer(1, 0.2*inch))
         else:
             story.append(Paragraph(
                 f"No visits recorded for {working_year}.",
