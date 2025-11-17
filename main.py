@@ -551,8 +551,10 @@ class LandscapingApp(ctk.CTk):
 
                 # Create tooltip
                 def create_tooltip(widget, text):
-                    def show_tooltip(event):
-                        # Destroy any existing tooltip first
+                    widget.tooltip = None
+                    widget.tooltip_timer = None
+
+                    def destroy_tooltip():
                         if hasattr(widget, 'tooltip') and widget.tooltip:
                             try:
                                 widget.tooltip.destroy()
@@ -560,12 +562,19 @@ class LandscapingApp(ctk.CTk):
                                 pass
                             widget.tooltip = None
 
+                    def show_tooltip(event):
+                        # Cancel any pending hide
+                        if widget.tooltip_timer:
+                            widget.after_cancel(widget.tooltip_timer)
+                            widget.tooltip_timer = None
+
+                        # Destroy any existing tooltip first
+                        destroy_tooltip()
+
                         # Create new tooltip
                         tooltip = ctk.CTkToplevel()
                         tooltip.wm_overrideredirect(True)
                         tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
-
-                        # Make tooltip click-through and non-focusable
                         tooltip.attributes('-topmost', True)
 
                         label = ctk.CTkLabel(
@@ -579,13 +588,20 @@ class LandscapingApp(ctk.CTk):
 
                         widget.tooltip = tooltip
 
+                        # Also hide tooltip if mouse enters the tooltip itself
+                        def on_tooltip_enter(e):
+                            hide_tooltip(e)
+
+                        tooltip.bind("<Enter>", on_tooltip_enter)
+
                     def hide_tooltip(event):
-                        if hasattr(widget, 'tooltip') and widget.tooltip:
-                            try:
-                                widget.tooltip.destroy()
-                            except:
-                                pass
-                            widget.tooltip = None
+                        # Cancel any pending timer
+                        if widget.tooltip_timer:
+                            widget.after_cancel(widget.tooltip_timer)
+
+                        # Immediately destroy tooltip
+                        destroy_tooltip()
+                        widget.tooltip_timer = None
 
                     widget.bind("<Enter>", show_tooltip)
                     widget.bind("<Leave>", hide_tooltip)
