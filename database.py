@@ -229,6 +229,22 @@ class Database:
         """)
         return [dict(row) for row in cursor.fetchall()]
 
+    def get_clients_missing_contact_info(self) -> List[Dict]:
+        """Get active clients with missing contact information (email, phone, or address)."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT c.id, c.name, c.email, c.phone, c.address
+            FROM clients c
+            WHERE c.is_active = 1
+            AND (
+                c.email IS NULL OR c.email = '' OR
+                c.phone IS NULL OR c.phone = '' OR
+                c.address IS NULL OR c.address = ''
+            )
+            ORDER BY c.name
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
     def delete_client(self, client_id: int):
         """Hard delete - permanently remove client and all related data."""
         self.connection.execute("DELETE FROM clients WHERE id = ?", (client_id,))

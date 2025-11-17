@@ -2803,9 +2803,10 @@ class LandscapingApp(ctk.CTk):
         flagged_visits = self.db.get_visits_needing_review()
         anomalous_visits = self.db.get_visits_with_anomalous_durations(threshold_percent=300.0)
         missing_data_clients = self.db.get_clients_missing_services_materials()
+        missing_contact_clients = self.db.get_clients_missing_contact_info()
 
         # Check if there are any issues
-        if not flagged_visits and not anomalous_visits and not missing_data_clients:
+        if not flagged_visits and not anomalous_visits and not missing_data_clients and not missing_contact_clients:
             no_issues = ctk.CTkLabel(
                 self.todo_scroll,
                 text="Nothing to do!\nAll data looks good.",
@@ -2817,7 +2818,36 @@ class LandscapingApp(ctk.CTk):
 
         current_row = 0
 
-        # Section 1: Missing Client Data
+        # Section 1: Missing Contact Information
+        if missing_contact_clients:
+            contact_header = ctk.CTkLabel(
+                self.todo_scroll,
+                text=f"📞 Missing Contact Information ({len(missing_contact_clients)})",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color="#B8860B"
+            )
+            contact_header.grid(row=current_row, column=0, sticky="w", padx=10, pady=(5, 10))
+            current_row += 1
+
+            desc_label = ctk.CTkLabel(
+                self.todo_scroll,
+                text="These clients are missing email, phone, or address information",
+                font=ctk.CTkFont(size=11),
+                text_color="gray"
+            )
+            desc_label.grid(row=current_row, column=0, sticky="w", padx=10, pady=(0, 10))
+            current_row += 1
+
+            for client in missing_contact_clients:
+                self.create_missing_contact_card(self.todo_scroll, client, current_row)
+                current_row += 1
+
+            # Add spacing after section
+            spacer = ctk.CTkFrame(self.todo_scroll, height=20, fg_color="transparent")
+            spacer.grid(row=current_row, column=0, sticky="ew")
+            current_row += 1
+
+        # Section 2: Missing Services/Materials Data
         if missing_data_clients:
             missing_header = ctk.CTkLabel(
                 self.todo_scroll,
@@ -2846,7 +2876,7 @@ class LandscapingApp(ctk.CTk):
             spacer.grid(row=current_row, column=0, sticky="ew")
             current_row += 1
 
-        # Section 2: Anomalous Durations
+        # Section 3: Anomalous Durations
         if anomalous_visits:
             anomaly_header = ctk.CTkLabel(
                 self.todo_scroll,
@@ -2876,7 +2906,7 @@ class LandscapingApp(ctk.CTk):
                 spacer.grid(row=current_row, column=0, sticky="ew")
                 current_row += 1
 
-        # Section 3: Manually Flagged Visits
+        # Section 4: Manually Flagged Visits
         if flagged_visits:
             flagged_header = ctk.CTkLabel(
                 self.todo_scroll,
@@ -3212,6 +3242,60 @@ class LandscapingApp(ctk.CTk):
             fg_color="gray"
         )
         no_services_btn.pack(side=tk.LEFT, padx=4)
+
+    def create_missing_contact_card(self, parent, client, row):
+        """Create a card for a client missing contact information."""
+        card = ctk.CTkFrame(parent, border_width=2, border_color="#B8860B")
+        card.grid(row=row, column=0, sticky="ew", padx=10, pady=8)
+        card.grid_columnconfigure(1, weight=1)
+
+        # Header with client name
+        header_label = ctk.CTkLabel(
+            card,
+            text=f"📞 {client['name']}",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#B8860B"
+        )
+        header_label.grid(row=0, column=0, columnspan=4, sticky="w", padx=12, pady=(10, 8))
+
+        # Show what's missing
+        missing_items = []
+        if not client.get('email'):
+            missing_items.append("Email")
+        if not client.get('phone'):
+            missing_items.append("Phone")
+        if not client.get('address'):
+            missing_items.append("Address")
+
+        info_text = f"Missing: {', '.join(missing_items)}"
+        info_label = ctk.CTkLabel(
+            card,
+            text=info_text,
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        info_label.grid(row=1, column=0, columnspan=4, sticky="w", padx=12, pady=(0, 8))
+
+        # Button
+        btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+        btn_frame.grid(row=2, column=0, columnspan=4, sticky="w", padx=12, pady=(0, 10))
+
+        edit_btn = ctk.CTkButton(
+            btn_frame,
+            text="Fill in Contact Information",
+            command=lambda: self.go_to_client_contact(client['id']),
+            font=ctk.CTkFont(size=11),
+            height=30,
+            fg_color="#B8860B"
+        )
+        edit_btn.pack(side=tk.LEFT, padx=4)
+
+    def go_to_client_contact(self, client_id):
+        """Navigate to client contact information."""
+        # Switch to Clients tab
+        self.tabview.set("Clients")
+        # Show this specific client's info
+        self.show_client_details(client_id)
 
     def go_to_client_materials(self, client_id, client_name):
         """Navigate to client materials configuration."""
