@@ -502,10 +502,10 @@ class LandscapingApp(ctk.CTk):
         # Create stat items
         stat_items = [
             ("Total Visits (this year):", f"{stats['visits_this_year']}", None),
-            ("Configured Materials/Services (Yearly):", f"${stats['configured_materials_cost_yearly']:.2f}", "Total yearly cost from assigned materials/services"),
+            ("Configured Materials/Services (Yearly):", f"${stats['configured_materials_cost_yearly'] + stats['configured_services_cost_yearly']:.2f}", "Total yearly cost from assigned materials/services"),
             ("Projected Labor Cost (Yearly):", f"${stats['projected_yearly_labor_cost']:.2f}", "Estimated labor cost for 52 visits/year"),
-            ("Total Material Costs:", f"${stats['total_material_cost']:.2f}", None),
-            ("Total Services Costs:", f"${stats['total_service_cost']:.2f}", None),
+            ("Total Material Costs:", f"${stats['total_material_cost']:.2f}", "Includes configured materials + materials from visits"),
+            ("Total Services Costs:", f"${stats['total_service_cost']:.2f}", "Includes configured services + services from visits"),
             ("Avg Time per Visit:", f"{stats['avg_time_per_visit']:.1f} min",
              f"Shortest: {stats['min_time_per_visit']:.1f} min\nLongest: {stats['max_time_per_visit']:.1f} min"),
             ("Est Yearly Cost:", f"${stats['est_yearly_cost']:.2f}", "Labor + configured materials/services"),

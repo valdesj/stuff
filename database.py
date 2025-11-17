@@ -429,35 +429,49 @@ class Database:
         """, (client_id, str(current_year)))
         visits_this_year = cursor.fetchone()['visit_count']
 
-        # Get configured materials/services yearly cost for this client
-        # This is the total cost based on cost × multiplier for all configured materials
+        # Get configured materials yearly cost for this client (materials only)
         cursor.execute("""
             SELECT COALESCE(SUM(COALESCE(cm.custom_cost, m.default_cost) * cm.multiplier), 0) as configured_cost
             FROM client_materials cm
             JOIN materials m ON cm.material_id = m.id
-            WHERE cm.client_id = ? AND cm.is_enabled = 1
+            WHERE cm.client_id = ? AND cm.is_enabled = 1 AND m.material_type = 'material'
         """, (client_id,))
         configured_materials_cost_yearly = cursor.fetchone()['configured_cost']
 
+        # Get configured services yearly cost for this client (services only)
+        cursor.execute("""
+            SELECT COALESCE(SUM(COALESCE(cm.custom_cost, m.default_cost) * cm.multiplier), 0) as configured_cost
+            FROM client_materials cm
+            JOIN materials m ON cm.material_id = m.id
+            WHERE cm.client_id = ? AND cm.is_enabled = 1 AND m.material_type = 'service'
+        """, (client_id,))
+        configured_services_cost_yearly = cursor.fetchone()['configured_cost']
+
         # Get total material costs from actual visits (materials only)
         cursor.execute("""
-            SELECT COALESCE(SUM(vm.quantity * vm.cost_at_time), 0) as total_material_cost
+            SELECT COALESCE(SUM(vm.quantity * vm.cost_at_time), 0) as visit_material_cost
             FROM visits v
             LEFT JOIN visit_materials vm ON v.id = vm.visit_id
             LEFT JOIN materials m ON vm.material_id = m.id
             WHERE v.client_id = ? AND m.material_type = 'material'
         """, (client_id,))
-        total_material_cost = cursor.fetchone()['total_material_cost']
+        visit_material_cost = cursor.fetchone()['visit_material_cost']
 
         # Get total service costs from actual visits (services only)
         cursor.execute("""
-            SELECT COALESCE(SUM(vm.quantity * vm.cost_at_time), 0) as total_service_cost
+            SELECT COALESCE(SUM(vm.quantity * vm.cost_at_time), 0) as visit_service_cost
             FROM visits v
             LEFT JOIN visit_materials vm ON v.id = vm.visit_id
             LEFT JOIN materials m ON vm.material_id = m.id
             WHERE v.client_id = ? AND m.material_type = 'service'
         """, (client_id,))
-        total_service_cost = cursor.fetchone()['total_service_cost']
+        visit_service_cost = cursor.fetchone()['visit_service_cost']
+
+        # Calculate total material costs (configured + visits)
+        total_material_cost = configured_materials_cost_yearly + visit_material_cost
+
+        # Calculate total service costs (configured + visits)
+        total_service_cost = configured_services_cost_yearly + visit_service_cost
 
         # Get total materials + services costs
         total_materials_services_cost = total_material_cost + total_service_cost
@@ -492,7 +506,7 @@ class Database:
         projected_yearly_labor_cost = avg_labor_cost_per_visit * 52
 
         # Total projected yearly cost = yearly labor + configured materials/services
-        est_yearly_cost = projected_yearly_labor_cost + configured_materials_cost_yearly
+        est_yearly_cost = projected_yearly_labor_cost + configured_materials_cost_yearly + configured_services_cost_yearly
 
         # Proposed monthly rate = est yearly cost / 12
         proposed_monthly_rate = est_yearly_cost / 12
@@ -511,6 +525,7 @@ class Database:
             'total_service_cost': round(total_service_cost, 2),
             'total_materials_services_cost': round(total_materials_services_cost, 2),
             'configured_materials_cost_yearly': round(configured_materials_cost_yearly, 2),
+            'configured_services_cost_yearly': round(configured_services_cost_yearly, 2),
             'projected_yearly_labor_cost': round(projected_yearly_labor_cost, 2),
             'avg_time_per_visit': round(avg_time_per_visit, 1),
             'min_time_per_visit': round(min_time_per_visit, 1),
