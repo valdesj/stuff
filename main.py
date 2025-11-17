@@ -63,6 +63,7 @@ class LandscapingApp(ctk.CTk):
         self.tab_dashboard = self.tabview.add("Dashboard")
         self.tab_clients = self.tabview.add("Clients")
         self.tab_visits = self.tabview.add("Visits")
+        self.tab_daily = self.tabview.add("Daily Schedule")
         self.tab_review = self.tabview.add("Review")
         self.tab_materials = self.tabview.add("Materials")
         self.tab_import = self.tabview.add("Import Data")
@@ -71,6 +72,7 @@ class LandscapingApp(ctk.CTk):
         self.init_dashboard_tab()
         self.init_clients_tab()
         self.init_visits_tab()
+        self.init_daily_schedule_tab()
         self.init_review_tab()
         self.init_materials_tab()
         self.init_import_tab()
@@ -2115,6 +2117,244 @@ class LandscapingApp(ctk.CTk):
             if client_name in self.visit_clients_data:
                 self.load_client_visits(self.visit_clients_data[client_name])
             self.refresh_dashboard()
+
+    # ==================== DAILY SCHEDULE TAB ====================
+
+    def init_daily_schedule_tab(self):
+        """Initialize the daily schedule tab with date selector."""
+        self.tab_daily.grid_columnconfigure(0, weight=1)
+        self.tab_daily.grid_rowconfigure(2, weight=1)
+
+        # Header
+        header = ctk.CTkLabel(
+            self.tab_daily,
+            text="Daily Schedule & Travel Times",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        header.grid(row=0, column=0, sticky="w", padx=15, pady=12)
+
+        # Date selection frame
+        date_frame = ctk.CTkFrame(self.tab_daily)
+        date_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 10))
+
+        date_label = ctk.CTkLabel(
+            date_frame,
+            text="Select Date:",
+            font=ctk.CTkFont(size=14)
+        )
+        date_label.pack(side=tk.LEFT, padx=10, pady=15)
+
+        # Date entry (MM/DD/YYYY format)
+        self.daily_date_entry = ctk.CTkEntry(
+            date_frame,
+            placeholder_text="MM/DD/YYYY",
+            font=ctk.CTkFont(size=13),
+            height=35,
+            width=150
+        )
+        self.daily_date_entry.insert(0, datetime.now().strftime("%m/%d/%Y"))
+        self.daily_date_entry.pack(side=tk.LEFT, padx=10, pady=15)
+
+        # Show button
+        show_btn = ctk.CTkButton(
+            date_frame,
+            text="Show Schedule",
+            command=self.load_daily_schedule,
+            font=ctk.CTkFont(size=14),
+            height=35
+        )
+        show_btn.pack(side=tk.LEFT, padx=10, pady=15)
+
+        # Quick date buttons
+        today_btn = ctk.CTkButton(
+            date_frame,
+            text="Today",
+            command=lambda: self.set_daily_date(datetime.now()),
+            font=ctk.CTkFont(size=12),
+            height=30,
+            width=80,
+            fg_color="transparent",
+            border_width=1
+        )
+        today_btn.pack(side=tk.LEFT, padx=5, pady=15)
+
+        yesterday_btn = ctk.CTkButton(
+            date_frame,
+            text="Yesterday",
+            command=lambda: self.set_daily_date(datetime.now() - timedelta(days=1)),
+            font=ctk.CTkFont(size=12),
+            height=30,
+            width=100,
+            fg_color="transparent",
+            border_width=1
+        )
+        yesterday_btn.pack(side=tk.LEFT, padx=5, pady=15)
+
+        # Schedule display frame
+        self.daily_schedule_frame = ctk.CTkScrollableFrame(self.tab_daily)
+        self.daily_schedule_frame.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        self.daily_schedule_frame.grid_columnconfigure(0, weight=1)
+
+        # Initial load
+        self.load_daily_schedule()
+
+    def set_daily_date(self, date_obj):
+        """Set the date entry to a specific date."""
+        self.daily_date_entry.delete(0, tk.END)
+        self.daily_date_entry.insert(0, date_obj.strftime("%m/%d/%Y"))
+        self.load_daily_schedule()
+
+    def load_daily_schedule(self):
+        """Load and display the schedule for the selected date."""
+        # Clear existing widgets
+        for widget in self.daily_schedule_frame.winfo_children():
+            widget.destroy()
+
+        # Parse date
+        date_str = self.daily_date_entry.get().strip()
+        try:
+            date_obj = datetime.strptime(date_str, '%m/%d/%Y')
+            db_date = date_obj.strftime('%Y-%m-%d')
+        except ValueError:
+            error_label = ctk.CTkLabel(
+                self.daily_schedule_frame,
+                text="Invalid date format. Please use MM/DD/YYYY",
+                font=ctk.CTkFont(size=14),
+                text_color="red"
+            )
+            error_label.pack(pady=50)
+            return
+
+        # Get all visits for this date across all clients
+        all_visits = []
+        clients = self.db.get_all_clients(active_only=True)
+        for client in clients:
+            visits = self.db.get_client_visits(client['id'])
+            for visit in visits:
+                if visit['visit_date'] == db_date:
+                    visit['client_name'] = client['name']
+                    all_visits.append(visit)
+
+        if not all_visits:
+            no_visits = ctk.CTkLabel(
+                self.daily_schedule_frame,
+                text=f"No visits scheduled for {date_str}",
+                font=ctk.CTkFont(size=14),
+                text_color="gray"
+            )
+            no_visits.pack(pady=50)
+            return
+
+        # Sort visits by start time
+        all_visits.sort(key=lambda x: x['start_time'])
+
+        # Display header with summary
+        summary_frame = ctk.CTkFrame(self.daily_schedule_frame, fg_color="transparent")
+        summary_frame.pack(fill="x", padx=10, pady=(5, 15))
+
+        formatted_date = date_obj.strftime("%A, %B %d, %Y")
+        date_header = ctk.CTkLabel(
+            summary_frame,
+            text=formatted_date,
+            font=ctk.CTkFont(size=15, weight="bold")
+        )
+        date_header.pack(anchor="w", pady=(0, 5))
+
+        # Calculate total work time and travel time
+        total_work_minutes = sum(v['duration_minutes'] for v in all_visits)
+        total_travel_minutes = 0
+
+        for i in range(len(all_visits) - 1):
+            end_time = datetime.strptime(all_visits[i]['end_time'], '%H:%M')
+            next_start = datetime.strptime(all_visits[i + 1]['start_time'], '%H:%M')
+            gap_minutes = (next_start - end_time).total_seconds() / 60
+            if gap_minutes > 0:
+                total_travel_minutes += gap_minutes
+
+        summary_text = f"{len(all_visits)} visits • {total_work_minutes:.0f} min work time • {total_travel_minutes:.0f} min travel time"
+        summary_label = ctk.CTkLabel(
+            summary_frame,
+            text=summary_text,
+            font=ctk.CTkFont(size=12),
+            text_color="gray"
+        )
+        summary_label.pack(anchor="w")
+
+        # Display each visit with travel time
+        for i, visit in enumerate(all_visits):
+            # Visit card
+            visit_card = ctk.CTkFrame(self.daily_schedule_frame, border_width=1)
+            visit_card.pack(fill="x", padx=10, pady=5)
+            visit_card.grid_columnconfigure(1, weight=1)
+
+            # Time indicator
+            start_time = self.format_time_12hr(visit['start_time'])
+            end_time = self.format_time_12hr(visit['end_time'])
+            time_label = ctk.CTkLabel(
+                visit_card,
+                text=f"{start_time}\n{end_time}",
+                font=ctk.CTkFont(size=11),
+                width=80,
+                text_color="gray"
+            )
+            time_label.grid(row=0, column=0, padx=10, pady=10, sticky="n")
+
+            # Client and duration info
+            info_frame = ctk.CTkFrame(visit_card, fg_color="transparent")
+            info_frame.grid(row=0, column=1, sticky="ew", padx=10, pady=10)
+
+            client_label = ctk.CTkLabel(
+                info_frame,
+                text=visit['client_name'],
+                font=ctk.CTkFont(size=14, weight="bold")
+            )
+            client_label.pack(anchor="w")
+
+            duration_label = ctk.CTkLabel(
+                info_frame,
+                text=f"Duration: {visit['duration_minutes']:.0f} minutes",
+                font=ctk.CTkFont(size=11),
+                text_color="gray"
+            )
+            duration_label.pack(anchor="w")
+
+            if visit.get('notes'):
+                notes_label = ctk.CTkLabel(
+                    info_frame,
+                    text=f"Notes: {visit['notes']}",
+                    font=ctk.CTkFont(size=10),
+                    text_color="gray",
+                    wraplength=400
+                )
+                notes_label.pack(anchor="w", pady=(3, 0))
+
+            # Show travel time to next visit
+            if i < len(all_visits) - 1:
+                # Calculate gap
+                end_time_obj = datetime.strptime(visit['end_time'], '%H:%M')
+                next_start_obj = datetime.strptime(all_visits[i + 1]['start_time'], '%H:%M')
+                gap_minutes = (next_start_obj - end_time_obj).total_seconds() / 60
+
+                if gap_minutes > 0:
+                    # Travel time indicator
+                    travel_frame = ctk.CTkFrame(self.daily_schedule_frame, fg_color="transparent")
+                    travel_frame.pack(fill="x", padx=10, pady=2)
+
+                    travel_icon = ctk.CTkLabel(
+                        travel_frame,
+                        text="🚗",
+                        font=ctk.CTkFont(size=14),
+                        width=80
+                    )
+                    travel_icon.pack(side=tk.LEFT, padx=10)
+
+                    travel_label = ctk.CTkLabel(
+                        travel_frame,
+                        text=f"Travel time: {gap_minutes:.0f} minutes → {all_visits[i + 1]['client_name']}",
+                        font=ctk.CTkFont(size=11, weight="bold"),
+                        text_color="#7B9EB5"
+                    )
+                    travel_label.pack(side=tk.LEFT, padx=5)
 
     # ==================== REVIEW TAB ====================
 
