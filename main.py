@@ -788,15 +788,10 @@ class LandscapingApp(ctk.CTk):
         story.append(Paragraph(f"Report Generated: {datetime.now().strftime('%B %d, %Y')}", normal_style))
         story.append(Spacer(1, 0.3*inch))
 
-        # Executive Summary
-        status = "Profitable" if stats['is_profitable'] else "Losing Money"
-        status_color = colors.green if stats['is_profitable'] else colors.red
-
+        # Executive Summary (customer-facing, no profitability status)
         summary_data = [
-            ['Account Status:', Paragraph(f"<b>{status}</b>", normal_style)],
-            ['Monthly Charge:', f"${stats['actual_monthly_charge']:.2f}"],
-            ['Proposed Rate:', f"${stats['proposed_monthly_rate']:.2f}"],
-            ['Monthly Profit/Loss:', f"${stats['monthly_profit_loss']:.2f}"]
+            ['Monthly Service Charge:', f"${stats['actual_monthly_charge']:.2f}"],
+            ['Cost-Based Rate:', f"${stats['proposed_monthly_rate']:.2f}"],
         ]
 
         summary_table = Table(summary_data, colWidths=[2.5*inch, 3*inch])
@@ -854,7 +849,7 @@ class LandscapingApp(ctk.CTk):
         cost_data = [
             ['Cost Category', 'Annual Amount', 'Calculation Method'],
             ['Labor Costs', f"${stats['projected_yearly_labor_cost']:.2f}",
-             f"Avg {stats['avg_time_per_visit']:.1f} min/visit × 52 visits × 2 crew × ${stats['hourly_rate']:.2f}/hr"],
+             f"Avg {stats['avg_time_per_visit']:.1f} min/visit x 52 visits x 2 crew x ${stats['hourly_rate']:.2f}/hr"],
             ['Materials', f"${stats['configured_materials_cost_yearly']:.2f}",
              'Configured materials for annual service'],
             ['Services', f"${stats['configured_services_cost_yearly']:.2f}",
@@ -862,7 +857,7 @@ class LandscapingApp(ctk.CTk):
             ['', '', ''],
             ['Total Annual Cost', f"${stats['est_yearly_cost']:.2f}", 'Sum of all categories above'],
             ['Proposed Monthly Rate', f"${stats['proposed_monthly_rate']:.2f}",
-             f"${stats['est_yearly_cost']:.2f} ÷ 12 months'],
+             f"${stats['est_yearly_cost']:.2f} / 12 months"],
         ]
 
         cost_table = Table(cost_data, colWidths=[2*inch, 1.5*inch, 2.5*inch])
@@ -881,31 +876,6 @@ class LandscapingApp(ctk.CTk):
         ]))
 
         story.append(cost_table)
-        story.append(Spacer(1, 0.2*inch))
-
-        # Actual vs Proposed
-        story.append(Paragraph("Current Billing Analysis", heading_style))
-
-        comparison_data = [
-            ['', 'Amount'],
-            ['Your Current Monthly Charge', f"${stats['actual_monthly_charge']:.2f}"],
-            ['Proposed Monthly Rate (Cost-Based)', f"${stats['proposed_monthly_rate']:.2f}"],
-            ['Difference', f"${stats['monthly_profit_loss']:.2f}"],
-        ]
-
-        comparison_table = Table(comparison_data, colWidths=[3.5*inch, 2*inch])
-        comparison_table.setStyle(TableStyle([
-            ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 11),
-            ('FONT', (0, 1), (-1, -1), 'Helvetica', 11),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0078D4')),
-            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ]))
-
-        story.append(comparison_table)
         story.append(Spacer(1, 0.3*inch))
 
         # Notes
@@ -913,8 +883,8 @@ class LandscapingApp(ctk.CTk):
         notes_text = """
         <b>Labor Costs:</b> Calculated based on average visit duration, assuming a 2-person crew and our standard hourly rate.<br/><br/>
         <b>Materials & Services:</b> Annual costs for fertilization, treatments, and other scheduled services specific to your property.<br/><br/>
-        <b>Proposed Monthly Rate:</b> A cost-based calculation that ensures fair pricing while covering our operational expenses.
-        Your actual monthly charge may differ based on your service agreement.<br/><br/>
+        <b>Cost-Based Rate:</b> A transparent calculation showing our actual costs to service your property.
+        This helps ensure fair and sustainable pricing.<br/><br/>
         <b>Note:</b> All calculations are based on historical data and projected annual service levels (typically 52 visits per year for weekly service).
         """
         story.append(Paragraph(notes_text, normal_style))
