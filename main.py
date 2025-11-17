@@ -736,6 +736,7 @@ class LandscapingApp(ctk.CTk):
         import matplotlib.dates as mdates
         import numpy as np
         from collections import defaultdict
+        from scipy.interpolate import make_interp_spline
 
         # Track temporary graph file for cleanup
         temp_graph_path = None
@@ -918,9 +919,31 @@ class LandscapingApp(ctk.CTk):
                 fig, ax = plt.subplots(figsize=(7, 3.5), facecolor='white')
                 ax.set_facecolor('white')
 
-                # Plot data
-                ax.plot(months, averages, marker='o', linestyle='-',
-                       linewidth=2.5, markersize=7, color='#0078D4', alpha=0.8)
+                # Plot with smooth curve if we have enough data points
+                if len(months) >= 3:
+                    # Convert dates to numbers for interpolation
+                    months_num = mdates.date2num(months)
+
+                    # Create smooth curve using spline interpolation
+                    months_smooth = np.linspace(months_num.min(), months_num.max(), 300)
+                    try:
+                        spl = make_interp_spline(months_num, averages, k=min(3, len(months)-1))
+                        averages_smooth = spl(months_smooth)
+
+                        # Plot smooth curve
+                        ax.plot(mdates.num2date(months_smooth), averages_smooth,
+                               linestyle='-', linewidth=2.5, color='#0078D4', alpha=0.8)
+                        # Plot actual data points
+                        ax.plot(months, averages, marker='o', linestyle='',
+                               markersize=7, color='#FF6B35', alpha=0.9, zorder=5)
+                    except:
+                        # Fallback to regular plot if spline fails
+                        ax.plot(months, averages, marker='o', linestyle='-',
+                               linewidth=2.5, markersize=7, color='#0078D4', alpha=0.8)
+                else:
+                    # Not enough points for smooth curve, use regular plot
+                    ax.plot(months, averages, marker='o', linestyle='-',
+                           linewidth=2.5, markersize=7, color='#0078D4', alpha=0.8)
 
                 # Customize axes
                 ax.set_xlabel("Month", fontsize=11, fontweight='bold', color='#333333')
