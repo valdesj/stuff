@@ -2174,8 +2174,7 @@ class LandscapingApp(ctk.CTk):
         # Make the calendar popup larger
         self.daily_date_picker._calendar.configure(
             font=('Segoe UI', 12),
-            borderwidth=2,
-            relief='solid'
+            borderwidth=2
         )
 
         # Show button
