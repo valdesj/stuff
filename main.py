@@ -264,10 +264,17 @@ class LandscapingApp(ctk.CTk):
         # Build filter options
         filter_options = ["📉 Losing Money", "📈 Earning Money", "---"]
 
-        # Sort clients by name and add to filter
+        # Sort clients by name and add to filter with profit indicators
         sorted_stats = sorted(stats_list, key=lambda x: x['client_name'])
         for stats in sorted_stats:
-            filter_options.append(stats['client_name'])
+            # Add emoji indicator based on profitability
+            if stats['is_profitable']:
+                filter_options.append(f"✓ {stats['client_name']}")
+            else:
+                filter_options.append(f"⚠ {stats['client_name']}")
+
+        # Store the stats list for later use
+        self.all_client_stats = stats_list
 
         # Update filter dropdown
         self.dashboard_filter_menu.configure(values=filter_options)
@@ -296,9 +303,9 @@ class LandscapingApp(ctk.CTk):
         if selection == "📉 Losing Money":
             filtered = [s for s in stats_list if not s['is_profitable']]
             if filtered:
-                # Show first losing money client
-                self.create_client_card(self.dashboard_client_frame, filtered[0], 0)
-                self.current_viz_client_id = filtered[0]['client_id']
+                # Show list of clients losing money
+                self.show_client_list(self.dashboard_client_frame, filtered, "Clients Losing Money")
+                self.current_viz_client_id = None
             else:
                 msg = ctk.CTkLabel(
                     self.dashboard_client_frame,
@@ -310,9 +317,9 @@ class LandscapingApp(ctk.CTk):
         elif selection == "📈 Earning Money":
             filtered = [s for s in stats_list if s['is_profitable']]
             if filtered:
-                # Show first earning money client
-                self.create_client_card(self.dashboard_client_frame, filtered[0], 0)
-                self.current_viz_client_id = filtered[0]['client_id']
+                # Show list of profitable clients
+                self.show_client_list(self.dashboard_client_frame, filtered, "Profitable Clients")
+                self.current_viz_client_id = None
             else:
                 msg = ctk.CTkLabel(
                     self.dashboard_client_frame,
@@ -322,11 +329,105 @@ class LandscapingApp(ctk.CTk):
                 msg.pack(pady=20)
                 self.current_viz_client_id = None
         elif selection != "---" and selection != "No clients":
+            # Remove emoji prefix if present
+            client_name = selection
+            if selection.startswith("✓ ") or selection.startswith("⚠ "):
+                client_name = selection[2:]  # Remove first 2 characters (emoji + space)
+
             # Show specific client by name
-            client_stats = next((s for s in stats_list if s['client_name'] == selection), None)
+            client_stats = next((s for s in stats_list if s['client_name'] == client_name), None)
             if client_stats:
                 self.create_client_card(self.dashboard_client_frame, client_stats, 0)
                 self.current_viz_client_id = client_stats['client_id']
+
+        # Update visualization
+        self.update_visualization()
+
+    def show_client_list(self, parent, client_stats_list, title):
+        """Display a clickable list of clients."""
+        # Header
+        header = ctk.CTkLabel(
+            parent,
+            text=title,
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        header.pack(pady=(10, 15))
+
+        # Create scrollable frame for client buttons
+        scroll_frame = ctk.CTkScrollableFrame(parent, height=400)
+        scroll_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        # Sort by profitability (most unprofitable or most profitable first)
+        if "Losing" in title:
+            # Sort by biggest loss first (most negative profit/loss)
+            sorted_clients = sorted(client_stats_list, key=lambda x: x['monthly_profit_loss'])
+        else:
+            # Sort by biggest profit first (most positive profit/loss)
+            sorted_clients = sorted(client_stats_list, key=lambda x: x['monthly_profit_loss'], reverse=True)
+
+        # Create clickable buttons for each client
+        for stats in sorted_clients:
+            # Create frame for each client button
+            client_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+            client_frame.pack(fill="x", padx=5, pady=3)
+
+            # Determine color and icon based on profitability
+            if stats['is_profitable']:
+                border_color = "green"
+                icon = "✓"
+                text_color = "green"
+            else:
+                border_color = "red"
+                icon = "⚠"
+                text_color = "red"
+
+            # Client button
+            client_btn = ctk.CTkButton(
+                client_frame,
+                text=f"{icon} {stats['client_name']}",
+                command=lambda s=stats: self.select_client_from_list(s),
+                font=ctk.CTkFont(size=12),
+                height=40,
+                border_width=2,
+                border_color=border_color,
+                fg_color="transparent",
+                hover_color=("#E0E0E0", "#2B2B2B")
+            )
+            client_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
+
+            # Profit/Loss indicator
+            profit_loss = stats['monthly_profit_loss']
+            profit_text = f"${abs(profit_loss):.2f}/mo"
+            if profit_loss >= 0:
+                profit_text = f"+{profit_text}"
+            else:
+                profit_text = f"-{profit_text}"
+
+            profit_label = ctk.CTkLabel(
+                client_frame,
+                text=profit_text,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=text_color,
+                width=100
+            )
+            profit_label.pack(side="right")
+
+    def select_client_from_list(self, client_stats):
+        """Select a client from the filtered list and show their full overview."""
+        # Update dropdown to show this client (with emoji prefix)
+        if client_stats['is_profitable']:
+            dropdown_value = f"✓ {client_stats['client_name']}"
+        else:
+            dropdown_value = f"⚠ {client_stats['client_name']}"
+
+        self.dashboard_filter_var.set(dropdown_value)
+
+        # Clear and show client card
+        for widget in self.dashboard_client_frame.winfo_children():
+            widget.destroy()
+
+        self.create_client_card(self.dashboard_client_frame, client_stats, 0)
+        self.current_viz_client_id = client_stats['client_id']
 
         # Update visualization
         self.update_visualization()
