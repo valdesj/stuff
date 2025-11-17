@@ -1145,12 +1145,12 @@ class LandscapingApp(ctk.CTk):
         right_frame.grid_columnconfigure(0, weight=1)
         right_frame.grid_rowconfigure(1, weight=1)
 
-        details_header = ctk.CTkLabel(
+        self.details_header = ctk.CTkLabel(
             right_frame,
             text="Client Details",
             font=ctk.CTkFont(size=14, weight="bold")
         )
-        details_header.grid(row=0, column=0, sticky="w", padx=12, pady=(12, 8))
+        self.details_header.grid(row=0, column=0, sticky="w", padx=12, pady=(12, 8))
 
         # Scrollable frame for client details
         self.client_details_frame = ctk.CTkScrollableFrame(right_frame)
@@ -1326,6 +1326,9 @@ class LandscapingApp(ctk.CTk):
 
     def show_client_details(self, client_id: int):
         """Display detailed information for a selected client."""
+        # Update header
+        self.details_header.configure(text="Client Details")
+
         # Clear existing widgets
         for widget in self.client_details_frame.winfo_children():
             widget.destroy()
@@ -1963,6 +1966,9 @@ class LandscapingApp(ctk.CTk):
 
     def show_group_details(self, bill_to: str):
         """Display group details and list of properties."""
+        # Update header
+        self.details_header.configure(text="Group Details")
+
         # Clear existing widgets
         for widget in self.client_details_frame.winfo_children():
             widget.destroy()
@@ -2101,15 +2107,29 @@ class LandscapingApp(ctk.CTk):
         matching_client = self.db.get_client_by_name(bill_to)
 
         if matching_client:
-            # Populate the fields
-            self.group_entries['email'].delete(0, 'end')
-            self.group_entries['email'].insert(0, matching_client.get('email', ''))
+            # Populate the email field
+            email_entry = self.group_entries['email']
+            email_entry.delete(0, tk.END)
+            email_value = matching_client.get('email') or ''
+            if email_value:
+                email_entry.insert(0, email_value)
 
-            self.group_entries['phone'].delete(0, 'end')
-            self.group_entries['phone'].insert(0, matching_client.get('phone', ''))
+            # Populate the phone field
+            phone_entry = self.group_entries['phone']
+            phone_entry.delete(0, tk.END)
+            phone_value = matching_client.get('phone') or ''
+            if phone_value:
+                phone_entry.insert(0, phone_value)
 
-            self.group_entries['address'].delete(0, 'end')
-            self.group_entries['address'].insert(0, matching_client.get('address', ''))
+            # Populate the address field
+            address_entry = self.group_entries['address']
+            address_entry.delete(0, tk.END)
+            address_value = matching_client.get('address') or ''
+            if address_value:
+                address_entry.insert(0, address_value)
+
+            # Force update
+            self.client_details_frame.update_idletasks()
 
             messagebox.showinfo("Success", f"Contact info copied from client '{matching_client['name']}'")
         else:
