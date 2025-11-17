@@ -109,6 +109,13 @@ class Database:
         except sqlite3.OperationalError:
             # Column already exists
             pass
+
+        # Add no_additional_services column to clients table (migration)
+        try:
+            cursor.execute("ALTER TABLE clients ADD COLUMN no_additional_services INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
         # Materials used during visits
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS visit_materials (
@@ -190,6 +197,37 @@ class Database:
         """Reactivate an inactive client."""
         self.connection.execute("UPDATE clients SET is_active = 1 WHERE id = ?", (client_id,))
         self.connection.commit()
+
+    def set_client_no_additional_services(self, client_id: int, value: bool):
+        """Set whether a client needs additional services/materials."""
+        self.connection.execute(
+            "UPDATE clients SET no_additional_services = ? WHERE id = ?",
+            (1 if value else 0, client_id)
+        )
+        self.connection.commit()
+
+    def get_client_no_additional_services(self, client_id: int) -> bool:
+        """Get whether a client is marked as not needing additional services/materials."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT no_additional_services FROM clients WHERE id = ?", (client_id,))
+        row = cursor.fetchone()
+        return bool(row['no_additional_services']) if row else False
+
+    def get_clients_missing_services_materials(self) -> List[Dict]:
+        """Get active clients without configured services/materials who need them."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT c.id, c.name
+            FROM clients c
+            WHERE c.is_active = 1
+            AND c.no_additional_services = 0
+            AND NOT EXISTS (
+                SELECT 1 FROM client_materials cm
+                WHERE cm.client_id = c.id AND cm.is_enabled = 1
+            )
+            ORDER BY c.name
+        """)
+        return [dict(row) for row in cursor.fetchall()]
 
     def delete_client(self, client_id: int):
         """Hard delete - permanently remove client and all related data."""
