@@ -2103,41 +2103,72 @@ class LandscapingApp(ctk.CTk):
 
     def copy_contact_from_client(self, bill_to: str):
         """Copy contact information from a client matching the bill_to name."""
-        # Try to find a client with name matching bill_to
-        matching_client = self.db.get_client_by_name(bill_to)
+        try:
+            # Try to find a client with name matching bill_to
+            matching_client = self.db.get_client_by_name(bill_to)
 
-        if matching_client:
-            # Populate the email field
-            email_entry = self.group_entries['email']
-            email_entry.delete(0, tk.END)
-            email_value = matching_client.get('email') or ''
-            if email_value:
-                email_entry.insert(0, email_value)
+            print(f"DEBUG: Looking for client with name: '{bill_to}'")
+            print(f"DEBUG: Found matching client: {matching_client}")
 
-            # Populate the phone field
-            phone_entry = self.group_entries['phone']
-            phone_entry.delete(0, tk.END)
-            phone_value = matching_client.get('phone') or ''
-            if phone_value:
-                phone_entry.insert(0, phone_value)
+            if matching_client:
+                # Get values with proper null handling
+                email_value = matching_client.get('email') or ''
+                phone_value = matching_client.get('phone') or ''
+                address_value = matching_client.get('address') or ''
 
-            # Populate the address field
-            address_entry = self.group_entries['address']
-            address_entry.delete(0, tk.END)
-            address_value = matching_client.get('address') or ''
-            if address_value:
-                address_entry.insert(0, address_value)
+                print(f"DEBUG: Email: '{email_value}', Phone: '{phone_value}', Address: '{address_value}'")
 
-            # Force update
-            self.client_details_frame.update_idletasks()
+                # Clear and populate the email field
+                self.group_entries['email'].delete(0, tk.END)
+                self.group_entries['email'].insert(0, email_value)
 
-            messagebox.showinfo("Success", f"Contact info copied from client '{matching_client['name']}'")
-        else:
-            messagebox.showwarning(
-                "No Match",
-                f"No active client found with name '{bill_to}'.\n\n"
-                "To use this feature, create a client with the exact same name as the Bill To value."
-            )
+                # Clear and populate the phone field
+                self.group_entries['phone'].delete(0, tk.END)
+                self.group_entries['phone'].insert(0, phone_value)
+
+                # Clear and populate the address field
+                self.group_entries['address'].delete(0, tk.END)
+                self.group_entries['address'].insert(0, address_value)
+
+                # Force UI update
+                self.group_entries['email'].update()
+                self.group_entries['phone'].update()
+                self.group_entries['address'].update()
+
+                # Show what was copied
+                copied_fields = []
+                if email_value:
+                    copied_fields.append(f"Email: {email_value}")
+                if phone_value:
+                    copied_fields.append(f"Phone: {phone_value}")
+                if address_value:
+                    copied_fields.append(f"Address: {address_value}")
+
+                if copied_fields:
+                    msg = f"Copied from client '{matching_client['name']}':\n\n" + "\n".join(copied_fields)
+                else:
+                    msg = f"Client '{matching_client['name']}' found, but no contact info to copy.\n\nThe client exists but has empty email, phone, and address fields."
+
+                messagebox.showinfo("Contact Info Copied", msg)
+            else:
+                # Show detailed warning
+                all_clients = self.db.get_all_clients(active_only=True)
+                client_names = [c['name'] for c in all_clients[:10]]  # Show first 10
+
+                msg = f"No active client found with exact name: '{bill_to}'\n\n"
+                msg += "To use this feature, create a client with the exact same name as the Bill To value.\n\n"
+                if client_names:
+                    msg += f"Active clients include:\n" + "\n".join(f"  • {name}" for name in client_names)
+                    if len(all_clients) > 10:
+                        msg += f"\n  ... and {len(all_clients) - 10} more"
+
+                messagebox.showwarning("No Matching Client", msg)
+
+        except Exception as e:
+            print(f"ERROR in copy_contact_from_client: {e}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Error", f"Failed to copy contact info:\n{str(e)}")
 
     def save_client_changes(self, client_id: int):
         """Save changes to client information."""
