@@ -147,6 +147,17 @@ class Database:
         # Initialize default settings if not exists
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('hourly_rate', '25.00')")
 
+        # Client groups table for group-level contact information
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS client_groups (
+                bill_to TEXT PRIMARY KEY,
+                email TEXT,
+                phone TEXT,
+                address TEXT,
+                notes TEXT
+            )
+        """)
+
         self.connection.commit()
 
     # ==================== CLIENT OPERATIONS ====================
@@ -278,6 +289,34 @@ class Database:
             ORDER BY name
         """, (bill_to,))
         return [dict(row) for row in cursor.fetchall()]
+
+    def get_group_info(self, bill_to: str) -> Optional[Dict]:
+        """Get contact information for a client group."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT * FROM client_groups WHERE bill_to = ?", (bill_to,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def save_group_info(self, bill_to: str, email: str = "", phone: str = "", address: str = "", notes: str = ""):
+        """Save or update contact information for a client group."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT INTO client_groups (bill_to, email, phone, address, notes)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(bill_to) DO UPDATE SET
+                email = excluded.email,
+                phone = excluded.phone,
+                address = excluded.address,
+                notes = excluded.notes
+        """, (bill_to, email, phone, address, notes))
+        self.connection.commit()
+
+    def get_client_by_name(self, name: str) -> Optional[Dict]:
+        """Get a client by exact name match."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT * FROM clients WHERE name = ? AND is_active = 1", (name,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
 
     # ==================== MATERIAL OPERATIONS ====================
 

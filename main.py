@@ -1254,73 +1254,54 @@ class LandscapingApp(ctk.CTk):
             no_groups.grid(row=0, column=0, pady=50)
             return
 
-        # Create expandable group cards
+        # Create group buttons (similar to client buttons)
         for idx, group in enumerate(groups):
-            self.create_group_card(self.clients_groups_scroll, group, idx)
+            self.create_group_button(self.clients_groups_scroll, group, idx)
 
-    def create_group_card(self, parent, group, row):
-        """Create a card for a client group."""
-        card = ctk.CTkFrame(parent, border_width=2, border_color="#4a4a4a")
-        card.grid(row=row, column=0, sticky="ew", padx=5, pady=8)
-        card.grid_columnconfigure(0, weight=1)
+    def create_group_button(self, parent, group, idx):
+        """Create a group button in the groups tab."""
+        def create_click_handler(bill_to, button):
+            def handler():
+                self.on_group_button_click(bill_to, button)
+            return handler
 
-        # Header with group name and client count
-        header = ctk.CTkLabel(
-            card,
+        btn = ctk.CTkButton(
+            parent,
             text=f"📋 {group['bill_to']} ({group['client_count']} properties)",
-            font=ctk.CTkFont(size=15, weight="bold"),
-            anchor="w"
+            font=ctk.CTkFont(size=17),
+            height=51,
+            corner_radius=8,
+            fg_color="#3a3a3a",
+            hover_color="#4a4a4a",
+            text_color="white",
+            anchor="w",
+            border_width=0
         )
-        header.grid(row=0, column=0, sticky="ew", padx=12, pady=10)
+        btn.grid(row=idx, column=0, sticky="ew", padx=5, pady=4)
 
-        # Expand button
-        expand_btn = ctk.CTkButton(
-            card,
-            text="View Properties ▼",
-            command=lambda: self.toggle_group_expansion(group['bill_to'], card),
-            font=ctk.CTkFont(size=11),
-            height=30,
-            fg_color="#5FA777"
+        # Store reference and set click handler
+        self.client_buttons.append(btn)
+        btn.configure(command=create_click_handler(group['bill_to'], btn))
+
+    def on_group_button_click(self, bill_to, button):
+        """Handle group button click."""
+        # Reset previous selection
+        if self.selected_client_button:
+            self.selected_client_button.configure(
+                fg_color="#3a3a3a",
+                border_width=0
+            )
+
+        # Make selected button appear pressed
+        button.configure(
+            fg_color="#154a78",
+            border_width=2,
+            border_color="#0d3552"
         )
-        expand_btn.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 10))
+        self.selected_client_button = button
 
-    def toggle_group_expansion(self, bill_to, card):
-        """Toggle expansion of a client group to show/hide clients."""
-        # Check if already expanded
-        if len(card.winfo_children()) > 2:
-            # Collapse - remove client list
-            for widget in card.winfo_children()[2:]:
-                widget.destroy()
-            # Update button
-            card.winfo_children()[1].configure(text="View Properties ▼")
-        else:
-            # Expand - show clients
-            clients = self.db.get_clients_in_group(bill_to)
-
-            # Update button
-            card.winfo_children()[1].configure(text="Hide Properties ▲")
-
-            # Add client buttons
-            for idx, client in enumerate(clients):
-                def create_click_handler(client_id):
-                    def handler():
-                        # Navigate to client in Active tab
-                        self.clients_tabview.set("Active")
-                        self.refresh_clients_list()
-                        self.show_client_details(client_id)
-                    return handler
-
-                btn = ctk.CTkButton(
-                    card,
-                    text=f"  • {client['name']}",
-                    command=create_click_handler(client['id']),
-                    font=ctk.CTkFont(size=13),
-                    height=35,
-                    fg_color="transparent",
-                    hover_color="#3a3a3a",
-                    anchor="w"
-                )
-                btn.grid(row=idx + 2, column=0, sticky="ew", padx=20, pady=2)
+        # Show group details on the right
+        self.show_group_details(bill_to)
 
     def on_client_button_click(self, client_id, button):
         """Handle client button click."""
@@ -1979,6 +1960,164 @@ class LandscapingApp(ctk.CTk):
             fg_color="green"
         )
         save_btn.grid(row=row, column=0, columnspan=2, sticky="ew", padx=20, pady=20)
+
+    def show_group_details(self, bill_to: str):
+        """Display group details and list of properties."""
+        # Clear existing widgets
+        for widget in self.client_details_frame.winfo_children():
+            widget.destroy()
+
+        # Get group info and clients
+        group_info = self.db.get_group_info(bill_to)
+        clients = self.db.get_clients_in_group(bill_to)
+
+        row = 0
+
+        # Group header
+        group_header = ctk.CTkLabel(
+            self.client_details_frame,
+            text=f"Group: {bill_to}",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        group_header.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
+        row += 1
+
+        # Contact information fields
+        fields = [
+            ("Email:", "email"),
+            ("Phone:", "phone"),
+            ("Address:", "address"),
+            ("Notes:", "notes"),
+        ]
+
+        self.group_entries = {}
+
+        for label_text, field_name in fields:
+            label = ctk.CTkLabel(
+                self.client_details_frame,
+                text=label_text,
+                font=ctk.CTkFont(size=14)
+            )
+            label.grid(row=row, column=0, sticky="w", padx=10, pady=8)
+
+            if field_name == "notes":
+                entry = ctk.CTkTextbox(
+                    self.client_details_frame,
+                    height=60,
+                    font=ctk.CTkFont(size=13)
+                )
+                if group_info:
+                    entry.insert("1.0", group_info.get(field_name, ""))
+            else:
+                entry = ctk.CTkEntry(
+                    self.client_details_frame,
+                    font=ctk.CTkFont(size=13),
+                    height=35
+                )
+                if group_info:
+                    entry.insert(0, str(group_info.get(field_name, "")))
+
+            entry.grid(row=row, column=1, sticky="ew", padx=10, pady=8)
+            self.group_entries[field_name] = entry
+            row += 1
+
+        # Button frame
+        btn_frame = ctk.CTkFrame(self.client_details_frame, fg_color="transparent")
+        btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        row += 1
+
+        # Save button
+        save_btn = ctk.CTkButton(
+            btn_frame,
+            text="Save Group Info",
+            command=lambda: self.save_group_info(bill_to),
+            font=ctk.CTkFont(size=14),
+            height=35,
+            fg_color="green"
+        )
+        save_btn.pack(side=tk.LEFT, padx=5)
+
+        # Copy from matching client button
+        copy_btn = ctk.CTkButton(
+            btn_frame,
+            text="Copy from Matching Client",
+            command=lambda: self.copy_contact_from_client(bill_to),
+            font=ctk.CTkFont(size=14),
+            height=35,
+            fg_color="#4a7ba7"
+        )
+        copy_btn.pack(side=tk.LEFT, padx=5)
+
+        # Properties in this group
+        properties_header = ctk.CTkLabel(
+            self.client_details_frame,
+            text=f"Properties in Group ({len(clients)})",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        properties_header.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(20, 10))
+        row += 1
+
+        # List properties
+        for client in clients:
+            client_frame = ctk.CTkFrame(self.client_details_frame, fg_color="#2b2b2b")
+            client_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=4)
+            client_frame.grid_columnconfigure(0, weight=1)
+
+            client_btn = ctk.CTkButton(
+                client_frame,
+                text=f"  • {client['name']}",
+                command=lambda c=client: self.navigate_to_client(c['id']),
+                font=ctk.CTkFont(size=14),
+                height=40,
+                fg_color="transparent",
+                hover_color="#3a3a3a",
+                anchor="w"
+            )
+            client_btn.grid(row=0, column=0, sticky="ew", padx=5, pady=3)
+            row += 1
+
+    def navigate_to_client(self, client_id):
+        """Navigate to a specific client in the Active tab."""
+        self.clients_tabview.set("Active")
+        self.refresh_clients_list()
+        self.show_client_details(client_id)
+
+    def save_group_info(self, bill_to: str):
+        """Save group contact information."""
+        try:
+            email = self.group_entries['email'].get().strip()
+            phone = self.group_entries['phone'].get().strip()
+            address = self.group_entries['address'].get().strip()
+            notes = self.group_entries['notes'].get("1.0", "end-1c")
+
+            self.db.save_group_info(bill_to, email, phone, address, notes)
+            messagebox.showinfo("Success", "Group information saved!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save group info: {str(e)}")
+
+    def copy_contact_from_client(self, bill_to: str):
+        """Copy contact information from a client matching the bill_to name."""
+        # Try to find a client with name matching bill_to
+        matching_client = self.db.get_client_by_name(bill_to)
+
+        if matching_client:
+            # Populate the fields
+            self.group_entries['email'].delete(0, 'end')
+            self.group_entries['email'].insert(0, matching_client.get('email', ''))
+
+            self.group_entries['phone'].delete(0, 'end')
+            self.group_entries['phone'].insert(0, matching_client.get('phone', ''))
+
+            self.group_entries['address'].delete(0, 'end')
+            self.group_entries['address'].insert(0, matching_client.get('address', ''))
+
+            messagebox.showinfo("Success", f"Contact info copied from client '{matching_client['name']}'")
+        else:
+            messagebox.showwarning(
+                "No Match",
+                f"No active client found with name '{bill_to}'.\n\n"
+                "To use this feature, create a client with the exact same name as the Bill To value."
+            )
 
     def save_client_changes(self, client_id: int):
         """Save changes to client information."""
