@@ -43,6 +43,9 @@ class LandscapingApp(ctk.CTk):
         self.title("Landscaping Client Tracker")
         self.geometry("1300x850")
 
+        # Set application icon
+        self.set_app_icon()
+
         # Configure grid
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -95,6 +98,50 @@ class LandscapingApp(ctk.CTk):
         # Load only the dashboard initially (shown by default)
         self.refresh_dashboard()
         self.tabs_loaded['dashboard'] = True
+
+    def set_app_icon(self):
+        """Set the application icon from PNG file, converting to ICO if needed."""
+        try:
+            import os
+            from PIL import Image
+
+            # Get the directory where the script is located
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            png_path = os.path.join(script_dir, 'mJorgesLogo.png')
+            ico_path = os.path.join(script_dir, 'mJorgesLogo.ico')
+
+            # Check if PNG exists
+            if os.path.exists(png_path):
+                # Convert PNG to ICO if ICO doesn't exist
+                if not os.path.exists(ico_path):
+                    print(f"Converting {png_path} to {ico_path}...")
+                    img = Image.open(png_path)
+                    # Resize to common icon sizes and save as ICO
+                    img.save(ico_path, format='ICO', sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+                    print(f"Icon created: {ico_path}")
+
+                # Set the icon
+                self.iconbitmap(ico_path)
+                print(f"Application icon set to: {ico_path}")
+
+                # Also set the taskbar icon using iconphoto for better compatibility
+                try:
+                    img = Image.open(png_path)
+                    photo = tk.PhotoImage(file=png_path)
+                    self.iconphoto(True, photo)
+                except:
+                    pass  # iconphoto might not work on all systems
+
+            else:
+                print(f"Icon file not found: {png_path}")
+                print("Application will use default icon. Add 'mJorgesLogo.png' to the application directory to use custom icon.")
+
+        except ImportError:
+            print("PIL/Pillow not installed. Cannot convert PNG to ICO.")
+            print("Install with: pip install Pillow")
+        except Exception as e:
+            print(f"Could not set application icon: {e}")
+            # Don't crash if icon setting fails
 
     def get_ocr_scanner(self):
         """Get OCR scanner with lazy initialization."""
