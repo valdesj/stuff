@@ -23,12 +23,13 @@ class OCRScanner:
         """Check if OCR functionality is available."""
         return self.ocr_available
 
-    def scan_image(self, image_path: str) -> Optional[str]:
+    def scan_image(self, image_path: str, preprocess: bool = True) -> Optional[str]:
         """
         Scan an image and extract text using OCR.
 
         Args:
             image_path: Path to the image file
+            preprocess: Whether to preprocess image for better OCR accuracy
 
         Returns:
             Extracted text or None if failed
@@ -41,11 +42,56 @@ class OCRScanner:
 
         try:
             image = Image.open(image_path)
-            text = pytesseract.image_to_string(image)
+
+            # Preprocess image for better OCR accuracy
+            if preprocess:
+                image = self._preprocess_image(image)
+
+            # Use different PSM modes for better results
+            custom_config = r'--oem 3 --psm 6'  # PSM 6: Assume uniform block of text
+            text = pytesseract.image_to_string(image, config=custom_config)
             return text
         except Exception as e:
             print(f"OCR failed: {str(e)}")
             return None
+
+    def _preprocess_image(self, image: 'Image.Image') -> 'Image.Image':
+        """
+        Preprocess image to improve OCR accuracy.
+
+        Args:
+            image: PIL Image object
+
+        Returns:
+            Preprocessed PIL Image object
+        """
+        try:
+            # Convert to RGB if necessary
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+
+            # Resize if too small (OCR works better with larger images)
+            width, height = image.size
+            if width < 1000:
+                scale_factor = 1000 / width
+                new_size = (int(width * scale_factor), int(height * scale_factor))
+                image = image.resize(new_size, Image.Resampling.LANCZOS)
+
+            # Enhance contrast and sharpness
+            from PIL import ImageEnhance
+
+            # Increase contrast
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(1.5)
+
+            # Increase sharpness
+            enhancer = ImageEnhance.Sharpness(image)
+            image = enhancer.enhance(2.0)
+
+            return image
+        except Exception as e:
+            print(f"Image preprocessing failed: {str(e)}")
+            return image  # Return original if preprocessing fails
 
     def parse_visit_records(self, text: str) -> List[Dict]:
         """
@@ -235,3 +281,112 @@ class OCRScanner:
             record['validation_error'] = str(e)
 
         return record
+
+    def scan_and_parse_visits(self, image_path: str) -> Dict:
+        """
+        Scan an image and parse visit records with validation.
+
+        Args:
+            image_path: Path to the image file
+
+        Returns:
+            Dictionary with scanned text, parsed records, and status
+        """
+        result = {
+            'success': False,
+            'text': None,
+            'records': [],
+            'error': None
+        }
+
+        # Scan the image
+        text = self.scan_image(image_path)
+
+        if not text:
+            result['error'] = 'Failed to extract text from image'
+            return result
+
+        result['text'] = text
+
+        # Parse visit records
+        records = self.parse_visit_records(text)
+
+        if not records:
+            result['error'] = 'No valid visit records found in the image'
+            return result
+
+        # Validate and calculate durations
+        validated_records = []
+        for record in records:
+            record = self.validate_and_calculate_duration(record)
+            validated_records.append(record)
+
+        result['records'] = validated_records
+        result['success'] = True
+
+        return result
+
+    def match_client_name(self, scanned_name: str, existing_clients: List[Dict], threshold: int = 80) -> Optional[Dict]:
+        """
+        Match a scanned client name to existing clients using fuzzy matching.
+
+        Args:
+            scanned_name: Client name from OCR
+            existing_clients: List of existing client dictionaries
+            threshold: Minimum similarity score (0-100) to consider a match
+
+        Returns:
+            Best matching client or None
+        """
+        if not scanned_name:
+            return None
+
+        scanned_name_lower = scanned_name.lower().strip()
+        best_match = None
+        best_score = 0
+
+        for client in existing_clients:
+            client_name = client.get('name', '').lower().strip()
+
+            # Calculate similarity score (simple approach)
+            score = self._calculate_similarity(scanned_name_lower, client_name)
+
+            if score > best_score and score >= threshold:
+                best_score = score
+                best_match = client
+
+        return best_match
+
+    def _calculate_similarity(self, str1: str, str2: str) -> int:
+        """
+        Calculate similarity between two strings using simple matching.
+
+        Args:
+            str1: First string
+            str2: Second string
+
+        Returns:
+            Similarity score (0-100)
+        """
+        # Exact match
+        if str1 == str2:
+            return 100
+
+        # Check if one contains the other
+        if str1 in str2 or str2 in str1:
+            return 90
+
+        # Simple word overlap
+        words1 = set(str1.split())
+        words2 = set(str2.split())
+
+        if not words1 or not words2:
+            return 0
+
+        common_words = words1 & words2
+        total_words = words1 | words2
+
+        if not total_words:
+            return 0
+
+        return int((len(common_words) / len(total_words)) * 100)

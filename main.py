@@ -2501,6 +2501,18 @@ class LandscapingApp(ctk.CTk):
         )
         add_visit_btn.pack(side=tk.LEFT, padx=10, pady=15)
 
+        # Scan Image button
+        scan_btn = ctk.CTkButton(
+            client_frame,
+            text="📷 Scan Image",
+            command=self.scan_visit_image,
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="#2e7d32",
+            hover_color="#1b5e20"
+        )
+        scan_btn.pack(side=tk.LEFT, padx=10, pady=15)
+
         # Visits list
         self.visits_scroll = ctk.CTkScrollableFrame(self.tab_visits)
         self.visits_scroll.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 20))
@@ -2855,6 +2867,328 @@ class LandscapingApp(ctk.CTk):
             if client_name in self.visit_clients_data:
                 self.load_client_visits(self.visit_clients_data[client_name])
             self.refresh_dashboard()
+
+    # ==================== OCR IMAGE SCANNING ====================
+
+    def scan_visit_image(self):
+        """Open file dialog to scan an image for visit data."""
+        # Check if OCR is available
+        if not self.ocr_scanner.is_available():
+            messagebox.showerror(
+                "OCR Not Available",
+                "OCR functionality is not available.\n\n"
+                "Please ensure tesseract-ocr is installed on your system:\n"
+                "- Windows: Download from https://github.com/UB-Mannheim/tesseract/wiki\n"
+                "- Mac: brew install tesseract\n"
+                "- Linux: sudo apt-get install tesseract-ocr"
+            )
+            return
+
+        # Open file dialog
+        file_path = filedialog.askopenfilename(
+            title="Select Visit Record Image",
+            filetypes=[
+                ("Image Files", "*.png *.jpg *.jpeg *.bmp *.tiff *.tif"),
+                ("All Files", "*.*")
+            ]
+        )
+
+        if not file_path:
+            return
+
+        # Show progress dialog
+        progress_dialog = ctk.CTkToplevel(self)
+        progress_dialog.title("Scanning Image")
+        progress_dialog.geometry("400x150")
+        progress_dialog.transient(self)
+        progress_dialog.grab_set()
+
+        # Center dialog
+        progress_dialog.update_idletasks()
+        x = (progress_dialog.winfo_screenwidth() // 2) - 200
+        y = (progress_dialog.winfo_screenheight() // 2) - 75
+        progress_dialog.geometry(f"400x150+{x}+{y}")
+
+        progress_label = ctk.CTkLabel(
+            progress_dialog,
+            text="Scanning image and extracting visit data...\nThis may take a few seconds.",
+            font=ctk.CTkFont(size=13)
+        )
+        progress_label.pack(pady=40)
+
+        progress_dialog.update()
+
+        # Scan the image
+        try:
+            result = self.ocr_scanner.scan_and_parse_visits(file_path)
+            progress_dialog.destroy()
+
+            if not result['success']:
+                messagebox.showerror("Scan Failed", result.get('error', 'Unknown error occurred'))
+                return
+
+            if not result['records']:
+                messagebox.showinfo(
+                    "No Records Found",
+                    "No visit records were found in the image.\n\n"
+                    "Make sure the image contains:\n"
+                    "- Date (MM/DD/YYYY or YYYY-MM-DD)\n"
+                    "- Time range (h:MM - h:MM)\n"
+                    "- Client name (optional)"
+                )
+                return
+
+            # Show review dialog
+            self.show_scanned_visits_dialog(result['records'], result['text'])
+
+        except Exception as e:
+            progress_dialog.destroy()
+            messagebox.showerror("Error", f"Failed to scan image:\n{str(e)}")
+
+    def show_scanned_visits_dialog(self, records: list, raw_text: str):
+        """Show dialog to review and import scanned visit records."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Review Scanned Visits")
+        dialog.geometry("900x700")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - 450
+        y = (dialog.winfo_screenheight() // 2) - 350
+        dialog.geometry(f"900x700+{x}+{y}")
+
+        # Header
+        header = ctk.CTkLabel(
+            dialog,
+            text=f"Found {len(records)} Visit Record(s)",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        header.pack(pady=15)
+
+        # Tabview for records and raw text
+        tabview = ctk.CTkTabview(dialog)
+        tabview.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
+        tab_records = tabview.add("Scanned Records")
+        tab_raw = tabview.add("Raw Text")
+
+        # Records tab
+        scroll_frame = ctk.CTkScrollableFrame(tab_records)
+        scroll_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Get all clients for matching
+        all_clients = self.db.get_all_clients(active_only=False)
+
+        import_data = []
+
+        for idx, record in enumerate(records):
+            # Create card for each record
+            card = ctk.CTkFrame(scroll_frame, border_width=2, border_color="#3a3a3a")
+            card.pack(fill="x", padx=5, pady=10)
+
+            # Header
+            card_header = ctk.CTkLabel(
+                card,
+                text=f"Visit #{idx + 1}",
+                font=ctk.CTkFont(size=14, weight="bold")
+            )
+            card_header.pack(pady=8)
+
+            # Grid for fields
+            fields_frame = ctk.CTkFrame(card, fg_color="transparent")
+            fields_frame.pack(fill="both", padx=15, pady=10)
+            fields_frame.grid_columnconfigure(1, weight=1)
+
+            row = 0
+
+            # Date
+            ctk.CTkLabel(fields_frame, text="Date:", font=ctk.CTkFont(size=12, weight="bold")).grid(
+                row=row, column=0, sticky="w", padx=5, pady=5
+            )
+            date_entry = ctk.CTkEntry(fields_frame, height=32)
+            date_entry.insert(0, record.get('date', ''))
+            date_entry.grid(row=row, column=1, sticky="ew", padx=5, pady=5)
+            row += 1
+
+            # Start Time
+            ctk.CTkLabel(fields_frame, text="Start Time:", font=ctk.CTkFont(size=12, weight="bold")).grid(
+                row=row, column=0, sticky="w", padx=5, pady=5
+            )
+            start_entry = ctk.CTkEntry(fields_frame, height=32)
+            start_entry.insert(0, record.get('start_time', ''))
+            start_entry.grid(row=row, column=1, sticky="ew", padx=5, pady=5)
+            row += 1
+
+            # End Time
+            ctk.CTkLabel(fields_frame, text="End Time:", font=ctk.CTkFont(size=12, weight="bold")).grid(
+                row=row, column=0, sticky="w", padx=5, pady=5
+            )
+            end_entry = ctk.CTkEntry(fields_frame, height=32)
+            end_entry.insert(0, record.get('end_time', ''))
+            end_entry.grid(row=row, column=1, sticky="ew", padx=5, pady=5)
+            row += 1
+
+            # Duration
+            duration_str = f"{record.get('duration_minutes', 0):.0f} minutes" if record.get('is_valid') else "Invalid"
+            ctk.CTkLabel(fields_frame, text="Duration:", font=ctk.CTkFont(size=12, weight="bold")).grid(
+                row=row, column=0, sticky="w", padx=5, pady=5
+            )
+            ctk.CTkLabel(
+                fields_frame,
+                text=duration_str,
+                text_color="green" if record.get('is_valid') else "red"
+            ).grid(row=row, column=1, sticky="w", padx=5, pady=5)
+            row += 1
+
+            # Client selection
+            ctk.CTkLabel(fields_frame, text="Client:", font=ctk.CTkFont(size=12, weight="bold")).grid(
+                row=row, column=0, sticky="w", padx=5, pady=5
+            )
+
+            # Try to match client
+            scanned_client_name = record.get('client_name', '')
+            matched_client = None
+            if scanned_client_name:
+                matched_client = self.ocr_scanner.match_client_name(scanned_client_name, all_clients)
+
+            client_names = [c['name'] for c in all_clients]
+            client_var = tk.StringVar()
+
+            if matched_client:
+                client_var.set(matched_client['name'])
+            elif scanned_client_name:
+                client_var.set(f"[Scanned: {scanned_client_name}] - Select below")
+            else:
+                client_var.set("Select client...")
+
+            client_menu = ctk.CTkOptionMenu(
+                fields_frame,
+                values=client_names if client_names else ["No clients"],
+                variable=client_var,
+                height=32
+            )
+            client_menu.grid(row=row, column=1, sticky="ew", padx=5, pady=5)
+            row += 1
+
+            # Validation status
+            if record.get('is_valid'):
+                status_color = "green"
+                status_text = "✓ Ready to import"
+            else:
+                status_color = "red"
+                status_text = f"✗ {record.get('validation_error', 'Invalid record')}"
+
+            status_label = ctk.CTkLabel(
+                card,
+                text=status_text,
+                font=ctk.CTkFont(size=12),
+                text_color=status_color
+            )
+            status_label.pack(pady=8)
+
+            # Store data for import
+            import_data.append({
+                'record': record,
+                'date_entry': date_entry,
+                'start_entry': start_entry,
+                'end_entry': end_entry,
+                'client_var': client_var,
+                'clients_dict': {c['name']: c['id'] for c in all_clients}
+            })
+
+        # Raw text tab
+        raw_text_widget = ctk.CTkTextbox(tab_raw, height=600)
+        raw_text_widget.pack(fill="both", expand=True, padx=10, pady=10)
+        raw_text_widget.insert("1.0", raw_text)
+        raw_text_widget.configure(state="disabled")
+
+        # Buttons
+        button_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        button_frame.pack(fill="x", padx=20, pady=10)
+
+        def import_all_visits():
+            """Import all valid scanned visits."""
+            imported_count = 0
+            errors = []
+
+            for idx, data in enumerate(import_data):
+                try:
+                    # Get client
+                    client_name = data['client_var'].get()
+                    if client_name not in data['clients_dict']:
+                        errors.append(f"Visit #{idx + 1}: No client selected")
+                        continue
+
+                    client_id = data['clients_dict'][client_name]
+
+                    # Get date and times
+                    visit_date = data['date_entry'].get().strip()
+                    start_time = data['start_entry'].get().strip()
+                    end_time = data['end_entry'].get().strip()
+
+                    # Calculate duration
+                    try:
+                        start = datetime.strptime(start_time, '%H:%M')
+                        end = datetime.strptime(end_time, '%H:%M')
+                        duration = (end - start).total_seconds() / 60
+                        if duration < 0:
+                            duration += 24 * 60
+                    except:
+                        errors.append(f"Visit #{idx + 1}: Invalid time format")
+                        continue
+
+                    # Add visit
+                    self.db.add_visit(
+                        client_id=client_id,
+                        visit_date=visit_date,
+                        start_time=start_time,
+                        end_time=end_time,
+                        duration_minutes=duration,
+                        notes="Imported from scanned image"
+                    )
+                    imported_count += 1
+
+                except Exception as e:
+                    errors.append(f"Visit #{idx + 1}: {str(e)}")
+
+            # Close dialog
+            dialog.destroy()
+
+            # Show result
+            if errors:
+                error_msg = "\n".join(errors)
+                messagebox.showwarning(
+                    "Import Complete with Errors",
+                    f"Imported {imported_count} visit(s).\n\nErrors:\n{error_msg}"
+                )
+            else:
+                messagebox.showinfo("Success", f"Successfully imported {imported_count} visit(s)!")
+
+            # Refresh visits view
+            self.refresh_visit_client_dropdown()
+            self.refresh_dashboard()
+
+        ctk.CTkButton(
+            button_frame,
+            text="Import All Visits",
+            command=import_all_visits,
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="#2e7d32",
+            hover_color="#1b5e20"
+        ).pack(side=tk.LEFT, padx=5)
+
+        ctk.CTkButton(
+            button_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="gray",
+            hover_color="darkgray"
+        ).pack(side=tk.RIGHT, padx=5)
 
     # ==================== DAILY SCHEDULE TAB ====================
 
