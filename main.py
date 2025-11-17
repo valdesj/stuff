@@ -552,9 +552,21 @@ class LandscapingApp(ctk.CTk):
                 # Create tooltip
                 def create_tooltip(widget, text):
                     def show_tooltip(event):
+                        # Destroy any existing tooltip first
+                        if hasattr(widget, 'tooltip') and widget.tooltip:
+                            try:
+                                widget.tooltip.destroy()
+                            except:
+                                pass
+                            widget.tooltip = None
+
+                        # Create new tooltip
                         tooltip = ctk.CTkToplevel()
                         tooltip.wm_overrideredirect(True)
                         tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+
+                        # Make tooltip click-through and non-focusable
+                        tooltip.attributes('-topmost', True)
 
                         label = ctk.CTkLabel(
                             tooltip,
@@ -568,9 +580,12 @@ class LandscapingApp(ctk.CTk):
                         widget.tooltip = tooltip
 
                     def hide_tooltip(event):
-                        if hasattr(widget, 'tooltip'):
-                            widget.tooltip.destroy()
-                            del widget.tooltip
+                        if hasattr(widget, 'tooltip') and widget.tooltip:
+                            try:
+                                widget.tooltip.destroy()
+                            except:
+                                pass
+                            widget.tooltip = None
 
                     widget.bind("<Enter>", show_tooltip)
                     widget.bind("<Leave>", hide_tooltip)
