@@ -10,6 +10,12 @@ except ImportError:
     except ImportError:
         Image = None
 
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
 import re
 from datetime import datetime
 from typing import List, Dict, Optional
@@ -22,21 +28,89 @@ import io
 class OCRScanner:
     """Handles scanning and parsing paper records using OCR."""
 
-    def __init__(self, use_cloud: bool = True):
+    def __init__(self, use_cloud: bool = True, gemini_api_key: Optional[str] = None):
         """
         Initialize the OCR scanner.
 
         Args:
             use_cloud: If True, use cloud OCR (requires internet). If False, use local tesseract.
+            gemini_api_key: Optional Gemini API key for advanced vision parsing (recommended)
         """
         self.ocr_available = OCR_AVAILABLE
         self.use_cloud = use_cloud
+        self.gemini_available = GEMINI_AVAILABLE and gemini_api_key is not None
+        self.gemini_api_key = gemini_api_key
+
+        # Initialize Gemini if available
+        if self.gemini_available:
+            try:
+                genai.configure(api_key=gemini_api_key)
+                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+            except Exception as e:
+                print(f"Failed to initialize Gemini: {e}")
+                self.gemini_available = False
 
     def is_available(self) -> bool:
         """Check if OCR functionality is available."""
+        if self.gemini_available:
+            return True  # Gemini is best option
         if self.use_cloud:
             return True  # Cloud OCR is always available if internet works
         return self.ocr_available
+
+    def scan_image_gemini(self, image_path: str) -> Optional[str]:
+        """
+        Scan an image using Google Gemini Vision API (best for handwritten tables).
+
+        Args:
+            image_path: Path to the image file
+
+        Returns:
+            Extracted text or None if failed
+        """
+        if not self.gemini_available:
+            return None
+
+        try:
+            if Image is None:
+                print("PIL not available, cannot use Gemini")
+                return None
+
+            # Load image
+            img = Image.open(image_path)
+
+            # Create prompt for structured data extraction
+            prompt = """
+            You are analyzing a handwritten visit schedule table for a landscaping business.
+
+            Please extract ALL visit records from this image. For each visit, provide:
+            - Date (in MM/DD/YYYY format)
+            - Client name
+            - Start time (in HH:MM 24-hour format)
+            - End time (in HH:MM 24-hour format)
+
+            Format each visit on a new line as:
+            Date: MM/DD/YYYY | Client: [name] | Time: HH:MM-HH:MM
+
+            Example output:
+            Date: 01/15/2024 | Client: Smith Residence | Time: 09:30-11:45
+            Date: 01/15/2024 | Client: Johnson Lawn Care | Time: 13:30-15:15
+
+            Extract ALL visits you can identify from the table. If the handwriting is unclear, make your best guess.
+            Be thorough and extract every visit shown in the image.
+            """
+
+            # Generate content with Gemini
+            response = self.gemini_model.generate_content([prompt, img])
+
+            if response and response.text:
+                return response.text
+
+            return None
+
+        except Exception as e:
+            print(f"Gemini OCR failed: {str(e)}")
+            return None
 
     def scan_image_cloud(self, image_path: str) -> Optional[str]:
         """
@@ -118,7 +192,7 @@ class OCRScanner:
     def scan_image(self, image_path: str, preprocess: bool = True) -> Optional[str]:
         """
         Scan an image and extract text using OCR.
-        Uses cloud OCR by default (no installation needed), falls back to local tesseract.
+        Priority: Gemini > Cloud OCR > Local Tesseract
 
         Args:
             image_path: Path to the image file
@@ -130,13 +204,20 @@ class OCRScanner:
         if not os.path.exists(image_path):
             return None
 
-        # Try cloud OCR first (preferred - no installation needed)
+        # Try Gemini first (best for handwritten tables)
+        if self.gemini_available:
+            print("Using Gemini Vision AI for OCR...")
+            text = self.scan_image_gemini(image_path)
+            if text:
+                return text
+            print("Gemini OCR failed, trying other methods...")
+
+        # Try cloud OCR second (no installation needed)
         if self.use_cloud:
+            print("Using cloud OCR...")
             text = self.scan_image_cloud(image_path)
             if text:
                 return text
-
-            # If cloud OCR fails, try local tesseract as fallback
             print("Cloud OCR failed, trying local tesseract...")
 
         # Fallback to local tesseract
@@ -196,6 +277,57 @@ class OCRScanner:
             print(f"Image preprocessing failed: {str(e)}")
             return image  # Return original if preprocessing fails
 
+    def parse_gemini_structured_output(self, text: str) -> List[Dict]:
+        """
+        Parse Gemini's structured visit record output.
+
+        Expected format:
+        Date: MM/DD/YYYY | Client: [name] | Time: HH:MM-HH:MM
+
+        Args:
+            text: Gemini extracted text
+
+        Returns:
+            List of parsed visit records
+        """
+        records = []
+        lines = text.split('\n')
+
+        # Pattern for Gemini's structured format
+        gemini_pattern = r'Date:\s*([0-9/\-]+)\s*\|\s*Client:\s*(.+?)\s*\|\s*Time:\s*(\d{1,2}:\d{2})-(\d{1,2}:\d{2})'
+
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#') or line.startswith('Example'):
+                continue
+
+            match = re.search(gemini_pattern, line, re.IGNORECASE)
+            if match:
+                date_str = match.group(1)
+                client_name = match.group(2).strip()
+                start_time_str = match.group(3)
+                end_time_str = match.group(4)
+
+                # Normalize date
+                normalized_date = self._normalize_date(date_str)
+                if not normalized_date:
+                    continue
+
+                # Normalize times
+                start_time = self._normalize_time(start_time_str)
+                end_time = self._normalize_time(end_time_str)
+
+                if start_time and end_time:
+                    records.append({
+                        'date': normalized_date,
+                        'client_name': client_name,
+                        'start_time': start_time,
+                        'end_time': end_time,
+                        'source': 'gemini'
+                    })
+
+        return records
+
     def parse_visit_records(self, text: str) -> List[Dict]:
         """
         Parse visit records from OCR text.
@@ -211,6 +343,12 @@ class OCRScanner:
         Returns:
             List of parsed visit records
         """
+        # Try Gemini structured format first
+        gemini_records = self.parse_gemini_structured_output(text)
+        if gemini_records:
+            return gemini_records
+
+        # Fall back to traditional parsing
         records = []
         lines = text.split('\n')
 
