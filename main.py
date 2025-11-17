@@ -1665,7 +1665,7 @@ class LandscapingApp(ctk.CTk):
             update_total_label()
             self.on_material_change()
 
-        material_var.trace('w', on_material_dropdown_change)
+        material_var.trace_add('write', lambda *args: on_material_dropdown_change())
         on_material_dropdown_change()  # Set initial placeholder
 
         # Bind change detection to entries
@@ -2270,7 +2270,7 @@ class LandscapingApp(ctk.CTk):
                 cost_entry.delete(0, tk.END)
 
         custom_check.configure(command=toggle_cost_entry)
-        material_var.trace('w', update_cost_ui)
+        material_var.trace_add('write', lambda *args: update_cost_ui())
 
         # Initial UI setup
         update_cost_ui()
