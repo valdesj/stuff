@@ -705,6 +705,242 @@ class LandscapingApp(ctk.CTk):
 
                 create_tooltip(info_label, tooltip_text)
 
+        # Export PDF button
+        export_btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+        export_btn_frame.grid(row=2, column=0, columnspan=3, sticky="ew", padx=8, pady=(8, 6))
+
+        export_btn = ctk.CTkButton(
+            export_btn_frame,
+            text="📄 Export Client Report (PDF)",
+            command=lambda: self.export_client_pdf(stats),
+            font=ctk.CTkFont(size=11),
+            height=32,
+            fg_color="#0078D4",
+            hover_color="#005A9E"
+        )
+        export_btn.pack(fill="x")
+
+    def export_client_pdf(self, stats):
+        """Export client statistics to a customer-friendly PDF report."""
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+        import os
+
+        # Get PDF export directory from settings
+        pdf_dir = self.db.get_setting('pdf_export_path', '')
+        if not pdf_dir or not os.path.exists(pdf_dir):
+            result = messagebox.askyesno(
+                "PDF Export Directory Not Set",
+                "PDF export directory is not configured or doesn't exist.\nWould you like to select a directory now?"
+            )
+            if result:
+                pdf_dir = filedialog.askdirectory(title="Select PDF Export Directory")
+                if pdf_dir:
+                    self.db.set_setting('pdf_export_path', pdf_dir)
+                else:
+                    return
+            else:
+                return
+
+        # Create filename
+        client_name = stats['client_name'].replace(' ', '_').replace('/', '_')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{client_name}_Report_{timestamp}.pdf"
+        filepath = os.path.join(pdf_dir, filename)
+
+        # Create PDF
+        doc = SimpleDocTemplate(filepath, pagesize=letter, topMargin=0.75*inch, bottomMargin=0.75*inch)
+        story = []
+        styles = getSampleStyleSheet()
+
+        # Custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#0078D4'),
+            spaceAfter=30,
+            alignment=TA_CENTER
+        )
+
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=16,
+            textColor=colors.HexColor('#333333'),
+            spaceAfter=12,
+            spaceBefore=20
+        )
+
+        normal_style = ParagraphStyle(
+            'CustomNormal',
+            parent=styles['Normal'],
+            fontSize=11,
+            leading=16
+        )
+
+        # Title
+        story.append(Paragraph(f"Service Report: {stats['client_name']}", title_style))
+        story.append(Paragraph(f"Report Generated: {datetime.now().strftime('%B %d, %Y')}", normal_style))
+        story.append(Spacer(1, 0.3*inch))
+
+        # Executive Summary
+        status = "Profitable" if stats['is_profitable'] else "Losing Money"
+        status_color = colors.green if stats['is_profitable'] else colors.red
+
+        summary_data = [
+            ['Account Status:', Paragraph(f"<b>{status}</b>", normal_style)],
+            ['Monthly Charge:', f"${stats['actual_monthly_charge']:.2f}"],
+            ['Proposed Rate:', f"${stats['proposed_monthly_rate']:.2f}"],
+            ['Monthly Profit/Loss:', f"${stats['monthly_profit_loss']:.2f}"]
+        ]
+
+        summary_table = Table(summary_data, colWidths=[2.5*inch, 3*inch])
+        summary_table.setStyle(TableStyle([
+            ('FONT', (0, 0), (-1, -1), 'Helvetica', 11),
+            ('FONT', (0, 0), (0, -1), 'Helvetica-Bold', 11),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#333333')),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ]))
+
+        story.append(Paragraph("Account Summary", heading_style))
+        story.append(summary_table)
+        story.append(Spacer(1, 0.2*inch))
+
+        # Visit Statistics
+        story.append(Paragraph("Service History", heading_style))
+        story.append(Paragraph(
+            f"We have completed <b>{stats['visit_count']}</b> service visits to your property, "
+            f"including <b>{stats['visits_this_year']}</b> visits this year.",
+            normal_style
+        ))
+        story.append(Spacer(1, 0.1*inch))
+
+        visit_data = [
+            ['Total Visits (All Time):', str(stats['visit_count'])],
+            ['Visits This Year:', str(stats['visits_this_year'])],
+            ['Average Time per Visit:', f"{stats['avg_time_per_visit']:.1f} minutes"],
+            ['Shortest Visit:', f"{stats['min_time_per_visit']:.1f} minutes"],
+            ['Longest Visit:', f"{stats['max_time_per_visit']:.1f} minutes"],
+        ]
+
+        visit_table = Table(visit_data, colWidths=[3*inch, 2.5*inch])
+        visit_table.setStyle(TableStyle([
+            ('FONT', (0, 0), (-1, -1), 'Helvetica', 10),
+            ('FONT', (0, 0), (0, -1), 'Helvetica-Bold', 10),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+
+        story.append(visit_table)
+        story.append(Spacer(1, 0.2*inch))
+
+        # Cost Breakdown
+        story.append(Paragraph("Annual Cost Breakdown", heading_style))
+        story.append(Paragraph(
+            "Your proposed monthly rate is calculated based on projected annual costs divided by 12 months. "
+            "Here's how we arrive at these figures:",
+            normal_style
+        ))
+        story.append(Spacer(1, 0.1*inch))
+
+        cost_data = [
+            ['Cost Category', 'Annual Amount', 'Calculation Method'],
+            ['Labor Costs', f"${stats['projected_yearly_labor_cost']:.2f}",
+             f"Avg {stats['avg_time_per_visit']:.1f} min/visit × 52 visits × 2 crew × ${stats['hourly_rate']:.2f}/hr"],
+            ['Materials', f"${stats['configured_materials_cost_yearly']:.2f}",
+             'Configured materials for annual service'],
+            ['Services', f"${stats['configured_services_cost_yearly']:.2f}",
+             'Additional services (fertilization, treatments, etc.)'],
+            ['', '', ''],
+            ['Total Annual Cost', f"${stats['est_yearly_cost']:.2f}", 'Sum of all categories above'],
+            ['Proposed Monthly Rate', f"${stats['proposed_monthly_rate']:.2f}",
+             f"${stats['est_yearly_cost']:.2f} ÷ 12 months'],
+        ]
+
+        cost_table = Table(cost_data, colWidths=[2*inch, 1.5*inch, 2.5*inch])
+        cost_table.setStyle(TableStyle([
+            ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 11),
+            ('FONT', (0, 1), (-1, -1), 'Helvetica', 9),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0078D4')),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('GRID', (0, 0), (-1, -3), 0.5, colors.grey),
+            ('LINEABOVE', (0, -2), (-1, -2), 2, colors.black),
+            ('FONT', (0, -2), (-1, -1), 'Helvetica-Bold', 11),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ]))
+
+        story.append(cost_table)
+        story.append(Spacer(1, 0.2*inch))
+
+        # Actual vs Proposed
+        story.append(Paragraph("Current Billing Analysis", heading_style))
+
+        comparison_data = [
+            ['', 'Amount'],
+            ['Your Current Monthly Charge', f"${stats['actual_monthly_charge']:.2f}"],
+            ['Proposed Monthly Rate (Cost-Based)', f"${stats['proposed_monthly_rate']:.2f}"],
+            ['Difference', f"${stats['monthly_profit_loss']:.2f}"],
+        ]
+
+        comparison_table = Table(comparison_data, colWidths=[3.5*inch, 2*inch])
+        comparison_table.setStyle(TableStyle([
+            ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 11),
+            ('FONT', (0, 1), (-1, -1), 'Helvetica', 11),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0078D4')),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ]))
+
+        story.append(comparison_table)
+        story.append(Spacer(1, 0.3*inch))
+
+        # Notes
+        story.append(Paragraph("Understanding Your Report", heading_style))
+        notes_text = """
+        <b>Labor Costs:</b> Calculated based on average visit duration, assuming a 2-person crew and our standard hourly rate.<br/><br/>
+        <b>Materials & Services:</b> Annual costs for fertilization, treatments, and other scheduled services specific to your property.<br/><br/>
+        <b>Proposed Monthly Rate:</b> A cost-based calculation that ensures fair pricing while covering our operational expenses.
+        Your actual monthly charge may differ based on your service agreement.<br/><br/>
+        <b>Note:</b> All calculations are based on historical data and projected annual service levels (typically 52 visits per year for weekly service).
+        """
+        story.append(Paragraph(notes_text, normal_style))
+
+        # Build PDF
+        try:
+            doc.build(story)
+            messagebox.showinfo(
+                "Success",
+                f"PDF report exported successfully!\n\nSaved to:\n{filepath}"
+            )
+
+            # Ask if user wants to open the file
+            if messagebox.askyesno("Open PDF?", "Would you like to open the PDF now?"):
+                import platform
+                import subprocess
+                if platform.system() == 'Windows':
+                    os.startfile(filepath)
+                elif platform.system() == 'Darwin':  # macOS
+                    subprocess.call(['open', filepath])
+                else:  # Linux
+                    subprocess.call(['xdg-open', filepath])
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to create PDF:\n{str(e)}")
+
     # ==================== CLIENTS TAB ====================
 
     def init_clients_tab(self):
