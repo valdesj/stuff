@@ -54,9 +54,17 @@ class Database:
                 default_cost REAL NOT NULL DEFAULT 0.0,
                 unit TEXT,
                 is_global INTEGER NOT NULL DEFAULT 1,
-                description TEXT
+                description TEXT,
+                material_type TEXT NOT NULL DEFAULT 'material'
             )
         """)
+
+        # Add material_type column to existing tables (migration)
+        try:
+            cursor.execute("ALTER TABLE materials ADD COLUMN material_type TEXT NOT NULL DEFAULT 'material'")
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
 
         # Client-specific material pricing (overrides global pricing)
         cursor.execute("""
@@ -65,6 +73,7 @@ class Database:
                 client_id INTEGER NOT NULL,
                 material_id INTEGER NOT NULL,
                 custom_cost REAL,
+                multiplier REAL NOT NULL DEFAULT 1.0,
                 is_enabled INTEGER NOT NULL DEFAULT 1,
                 FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
                 FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE,
@@ -72,6 +81,12 @@ class Database:
             )
         """)
 
+        # Add multiplier column to existing tables (migration)
+        try:
+            cursor.execute("ALTER TABLE client_materials ADD COLUMN multiplier REAL NOT NULL DEFAULT 1.0")
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
         # Visits table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS visits (
@@ -82,11 +97,18 @@ class Database:
                 end_time TIME NOT NULL,
                 duration_minutes REAL NOT NULL,
                 notes TEXT,
+                needs_review INTEGER NOT NULL DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
             )
         """)
 
+        # Add needs_review column to existing tables (migration)
+        try:
+            cursor.execute("ALTER TABLE visits ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
         # Materials used during visits
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS visit_materials (
@@ -99,6 +121,17 @@ class Database:
                 FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE
             )
         """)
+
+        # Settings table for global configuration
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+
+        # Initialize default settings if not exists
+        cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('hourly_rate', '25.00')")
 
         self.connection.commit()
 
@@ -166,13 +199,13 @@ class Database:
     # ==================== MATERIAL OPERATIONS ====================
 
     def add_material(self, name: str, default_cost: float, unit: str = "",
-                     is_global: bool = True, description: str = "") -> int:
+                     is_global: bool = True, description: str = "", material_type: str = "material") -> int:
         """Add a new material/service to the catalog."""
         cursor = self.connection.cursor()
         cursor.execute("""
-            INSERT INTO materials (name, default_cost, unit, is_global, description)
-            VALUES (?, ?, ?, ?, ?)
-        """, (name, default_cost, unit, 1 if is_global else 0, description))
+            INSERT INTO materials (name, default_cost, unit, is_global, description, material_type)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (name, default_cost, unit, 1 if is_global else 0, description, material_type))
         self.connection.commit()
         return cursor.lastrowid
 
@@ -184,7 +217,7 @@ class Database:
 
     def update_material(self, material_id: int, **kwargs):
         """Update material information."""
-        allowed_fields = ['name', 'default_cost', 'unit', 'is_global', 'description']
+        allowed_fields = ['name', 'default_cost', 'unit', 'is_global', 'description', 'material_type']
         updates = []
         values = []
 
@@ -206,13 +239,13 @@ class Database:
 
     # ==================== CLIENT MATERIAL OPERATIONS ====================
 
-    def add_client_material(self, client_id: int, material_id: int, custom_cost: Optional[float] = None):
-        """Associate a material with a client, optionally with custom pricing."""
+    def add_client_material(self, client_id: int, material_id: int, custom_cost: Optional[float] = None, multiplier: float = 1.0):
+        """Associate a material with a client, optionally with custom pricing and multiplier."""
         cursor = self.connection.cursor()
         cursor.execute("""
-            INSERT OR REPLACE INTO client_materials (client_id, material_id, custom_cost)
-            VALUES (?, ?, ?)
-        """, (client_id, material_id, custom_cost))
+            INSERT OR REPLACE INTO client_materials (client_id, material_id, custom_cost, multiplier)
+            VALUES (?, ?, ?, ?)
+        """, (client_id, material_id, custom_cost, multiplier))
         self.connection.commit()
 
     def get_client_materials(self, client_id: int) -> List[Dict]:
@@ -220,9 +253,10 @@ class Database:
         cursor = self.connection.cursor()
         cursor.execute("""
             SELECT
-                cm.id, cm.client_id, cm.material_id, cm.custom_cost, cm.is_enabled,
+                cm.id, cm.client_id, cm.material_id, cm.custom_cost, cm.multiplier, cm.is_enabled,
                 m.name, m.default_cost, m.unit, m.is_global, m.description,
-                COALESCE(cm.custom_cost, m.default_cost) as effective_cost
+                COALESCE(cm.custom_cost, m.default_cost) as effective_cost,
+                COALESCE(cm.custom_cost, m.default_cost) * cm.multiplier as total_cost
             FROM client_materials cm
             JOIN materials m ON cm.material_id = m.id
             WHERE cm.client_id = ? AND cm.is_enabled = 1
@@ -241,13 +275,13 @@ class Database:
     # ==================== VISIT OPERATIONS ====================
 
     def add_visit(self, client_id: int, visit_date: str, start_time: str,
-                  end_time: str, duration_minutes: float, notes: str = "") -> int:
+                  end_time: str, duration_minutes: float, notes: str = "", needs_review: int = 0) -> int:
         """Add a new visit record."""
         cursor = self.connection.cursor()
         cursor.execute("""
-            INSERT INTO visits (client_id, visit_date, start_time, end_time, duration_minutes, notes)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (client_id, visit_date, start_time, end_time, duration_minutes, notes))
+            INSERT INTO visits (client_id, visit_date, start_time, end_time, duration_minutes, notes, needs_review)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (client_id, visit_date, start_time, end_time, duration_minutes, notes, needs_review))
         self.connection.commit()
         return cursor.lastrowid
 
@@ -263,7 +297,7 @@ class Database:
 
     def update_visit(self, visit_id: int, **kwargs):
         """Update visit information."""
-        allowed_fields = ['visit_date', 'start_time', 'end_time', 'duration_minutes', 'notes']
+        allowed_fields = ['visit_date', 'start_time', 'end_time', 'duration_minutes', 'notes', 'needs_review']
         updates = []
         values = []
 
@@ -277,6 +311,35 @@ class Database:
             query = f"UPDATE visits SET {', '.join(updates)} WHERE id = ?"
             self.connection.execute(query, values)
             self.connection.commit()
+
+    def get_visits_needing_review(self) -> List[Dict]:
+        """Get all visits that are flagged as needing review."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT v.*, c.name as client_name
+            FROM visits v
+            JOIN clients c ON v.client_id = c.id
+            WHERE v.needs_review = 1
+            ORDER BY v.visit_date DESC, v.start_time DESC
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_visit_by_id(self, visit_id: int) -> Optional[Dict]:
+        """Get a specific visit by ID."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT v.*, c.name as client_name
+            FROM visits v
+            JOIN clients c ON v.client_id = c.id
+            WHERE v.id = ?
+        """, (visit_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def mark_visit_reviewed(self, visit_id: int):
+        """Mark a visit as reviewed (clear the needs_review flag)."""
+        self.connection.execute("UPDATE visits SET needs_review = 0 WHERE id = ?", (visit_id,))
+        self.connection.commit()
 
     def delete_visit(self, visit_id: int):
         """Delete a visit record."""
@@ -312,10 +375,35 @@ class Database:
         self.connection.execute("DELETE FROM visit_materials WHERE id = ?", (visit_material_id,))
         self.connection.commit()
 
+    # ==================== SETTINGS OPERATIONS ====================
+
+    def get_setting(self, key: str, default: str = "") -> str:
+        """Get a setting value by key."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        return row['value'] if row else default
+
+    def set_setting(self, key: str, value: str):
+        """Set a setting value."""
+        self.connection.execute("""
+            INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)
+        """, (key, value))
+        self.connection.commit()
+
+    def get_hourly_rate(self) -> float:
+        """Get the hourly labor rate."""
+        return float(self.get_setting('hourly_rate', '25.00'))
+
+    def set_hourly_rate(self, rate: float):
+        """Set the hourly labor rate."""
+        self.set_setting('hourly_rate', str(rate))
+
     # ==================== ANALYTICS & CALCULATIONS ====================
 
     def get_client_statistics(self, client_id: int) -> Dict:
         """Calculate comprehensive statistics for a client."""
+        from datetime import datetime
         cursor = self.connection.cursor()
 
         # Get client info
@@ -323,63 +411,133 @@ class Database:
         if not client:
             return {}
 
-        # Get visit count
+        # Get hourly rate
+        hourly_rate = self.get_hourly_rate()
+
+        # Get current year
+        current_year = datetime.now().year
+
+        # Get visit count (all time)
         cursor.execute("SELECT COUNT(*) as visit_count FROM visits WHERE client_id = ?", (client_id,))
         visit_count = cursor.fetchone()['visit_count']
 
-        # Get total material costs
+        # Get visit count (this year)
         cursor.execute("""
-            SELECT COALESCE(SUM(vm.quantity * vm.cost_at_time), 0) as total_material_cost
+            SELECT COUNT(*) as visit_count
+            FROM visits
+            WHERE client_id = ? AND strftime('%Y', visit_date) = ?
+        """, (client_id, str(current_year)))
+        visits_this_year = cursor.fetchone()['visit_count']
+
+        # Get configured materials yearly cost for this client (materials only)
+        cursor.execute("""
+            SELECT COALESCE(SUM(COALESCE(cm.custom_cost, m.default_cost) * cm.multiplier), 0) as configured_cost
+            FROM client_materials cm
+            JOIN materials m ON cm.material_id = m.id
+            WHERE cm.client_id = ? AND cm.is_enabled = 1 AND m.material_type = 'material'
+        """, (client_id,))
+        configured_materials_cost_yearly = cursor.fetchone()['configured_cost']
+
+        # Get configured services yearly cost for this client (services only)
+        cursor.execute("""
+            SELECT COALESCE(SUM(COALESCE(cm.custom_cost, m.default_cost) * cm.multiplier), 0) as configured_cost
+            FROM client_materials cm
+            JOIN materials m ON cm.material_id = m.id
+            WHERE cm.client_id = ? AND cm.is_enabled = 1 AND m.material_type = 'service'
+        """, (client_id,))
+        configured_services_cost_yearly = cursor.fetchone()['configured_cost']
+
+        # Get total material costs from actual visits (materials only)
+        cursor.execute("""
+            SELECT COALESCE(SUM(vm.quantity * vm.cost_at_time), 0) as visit_material_cost
             FROM visits v
             LEFT JOIN visit_materials vm ON v.id = vm.visit_id
-            WHERE v.client_id = ?
+            LEFT JOIN materials m ON vm.material_id = m.id
+            WHERE v.client_id = ? AND m.material_type = 'material'
         """, (client_id,))
-        total_material_cost = cursor.fetchone()['total_material_cost']
+        visit_material_cost = cursor.fetchone()['visit_material_cost']
 
-        # Calculate averages and projections
-        avg_cost_per_visit = total_material_cost / visit_count if visit_count > 0 else 0
+        # Get total service costs from actual visits (services only)
+        cursor.execute("""
+            SELECT COALESCE(SUM(vm.quantity * vm.cost_at_time), 0) as visit_service_cost
+            FROM visits v
+            LEFT JOIN visit_materials vm ON v.id = vm.visit_id
+            LEFT JOIN materials m ON vm.material_id = m.id
+            WHERE v.client_id = ? AND m.material_type = 'service'
+        """, (client_id,))
+        visit_service_cost = cursor.fetchone()['visit_service_cost']
 
-        # Estimate visits per year (you might want to make this configurable)
-        # For now, let's calculate based on actual visit frequency if we have data
+        # Calculate total material costs (configured + visits)
+        total_material_cost = configured_materials_cost_yearly + visit_material_cost
+
+        # Calculate total service costs (configured + visits)
+        total_service_cost = configured_services_cost_yearly + visit_service_cost
+
+        # Get total materials + services costs
+        total_materials_services_cost = total_material_cost + total_service_cost
+
+        # Get visit time statistics
         cursor.execute("""
             SELECT
-                MIN(visit_date) as first_visit,
-                MAX(visit_date) as last_visit
+                COALESCE(AVG(duration_minutes), 0) as avg_duration,
+                COALESCE(MIN(duration_minutes), 0) as min_duration,
+                COALESCE(MAX(duration_minutes), 0) as max_duration,
+                COALESCE(SUM(duration_minutes), 0) as total_duration
             FROM visits
             WHERE client_id = ?
         """, (client_id,))
-        date_range = cursor.fetchone()
+        time_stats = cursor.fetchone()
+        avg_time_per_visit = time_stats['avg_duration']
+        min_time_per_visit = time_stats['min_duration']
+        max_time_per_visit = time_stats['max_duration']
+        total_time = time_stats['total_duration']
 
-        # Calculate visits per year based on actual data
-        visits_per_year = visit_count
-        if date_range['first_visit'] and date_range['last_visit']:
-            from datetime import datetime
-            first = datetime.fromisoformat(date_range['first_visit'])
-            last = datetime.fromisoformat(date_range['last_visit'])
-            days_diff = (last - first).days
-            if days_diff > 0:
-                visits_per_year = (visit_count / days_diff) * 365
+        # Calculate labor cost
+        # Total time in hours * 2 crew members * hourly rate
+        total_labor_cost = (total_time / 60) * 2 * hourly_rate
 
-        calculated_yearly_cost = avg_cost_per_visit * visits_per_year
-        calculated_monthly_cost = calculated_yearly_cost / 12
+        # Historical average cost per visit = (labor cost + materials/services from visits) / visit count
+        total_cost = total_labor_cost + total_materials_services_cost
+        avg_cost_per_visit = total_cost / visit_count if visit_count > 0 else 0
+
+        # Calculate projected yearly costs
+        # Yearly labor cost = avg labor cost per visit × 52 visits
+        avg_labor_cost_per_visit = (avg_time_per_visit / 60) * 2 * hourly_rate
+        projected_yearly_labor_cost = avg_labor_cost_per_visit * 52
+
+        # Total projected yearly cost = yearly labor + configured materials/services
+        est_yearly_cost = projected_yearly_labor_cost + configured_materials_cost_yearly + configured_services_cost_yearly
+
+        # Proposed monthly rate = est yearly cost / 12
+        proposed_monthly_rate = est_yearly_cost / 12
 
         # Compare to actual monthly charge
         actual_monthly_charge = client['monthly_charge']
-        profit_loss = actual_monthly_charge - calculated_monthly_cost
+        profit_loss = actual_monthly_charge - proposed_monthly_rate
         is_profitable = profit_loss >= 0
 
         return {
             'client_id': client_id,
             'client_name': client['name'],
             'visit_count': visit_count,
+            'visits_this_year': visits_this_year,
             'total_material_cost': round(total_material_cost, 2),
+            'total_service_cost': round(total_service_cost, 2),
+            'total_materials_services_cost': round(total_materials_services_cost, 2),
+            'configured_materials_cost_yearly': round(configured_materials_cost_yearly, 2),
+            'configured_services_cost_yearly': round(configured_services_cost_yearly, 2),
+            'projected_yearly_labor_cost': round(projected_yearly_labor_cost, 2),
+            'avg_time_per_visit': round(avg_time_per_visit, 1),
+            'min_time_per_visit': round(min_time_per_visit, 1),
+            'max_time_per_visit': round(max_time_per_visit, 1),
+            'total_labor_cost': round(total_labor_cost, 2),
             'avg_cost_per_visit': round(avg_cost_per_visit, 2),
-            'visits_per_year': round(visits_per_year, 1),
-            'calculated_yearly_cost': round(calculated_yearly_cost, 2),
-            'calculated_monthly_cost': round(calculated_monthly_cost, 2),
+            'est_yearly_cost': round(est_yearly_cost, 2),
+            'proposed_monthly_rate': round(proposed_monthly_rate, 2),
             'actual_monthly_charge': round(actual_monthly_charge, 2),
             'monthly_profit_loss': round(profit_loss, 2),
-            'is_profitable': is_profitable
+            'is_profitable': is_profitable,
+            'hourly_rate': round(hourly_rate, 2)
         }
 
     def get_all_client_statistics(self, active_only: bool = True) -> List[Dict]:

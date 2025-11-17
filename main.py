@@ -10,10 +10,11 @@ from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
 from typing import Optional
+from collections import defaultdict
 
 
 # Configure CustomTkinter
-ctk.set_appearance_mode("light")  # Light mode for older users
+ctk.set_appearance_mode("dark")  # Dark mode
 ctk.set_default_color_theme("blue")
 
 
@@ -26,13 +27,20 @@ class LandscapingApp(ctk.CTk):
         # Initialize database
         self.db = Database()
 
-        # Initialize importers
+        # Load and apply saved color theme
+        saved_theme = self.db.get_setting('color_theme', 'blue')
+        try:
+            ctk.set_default_color_theme(saved_theme)
+        except:
+            ctk.set_default_color_theme("blue")
+
+        # Initialize importers (lazy load OCR scanner only when needed)
         self.excel_importer = ExcelImporter(self.db)
-        self.ocr_scanner = OCRScanner()
+        self.ocr_scanner = None  # Lazy load when OCR tab is accessed
 
         # Configure window
         self.title("Landscaping Client Tracker")
-        self.geometry("1200x800")
+        self.geometry("1300x850")
 
         # Configure grid
         self.grid_columnconfigure(0, weight=1)
@@ -40,7 +48,7 @@ class LandscapingApp(ctk.CTk):
 
         # Create main container
         self.main_container = ctk.CTkFrame(self)
-        self.main_container.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.main_container.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         self.main_container.grid_columnconfigure(0, weight=1)
         self.main_container.grid_rowconfigure(1, weight=1)
 
@@ -48,13 +56,14 @@ class LandscapingApp(ctk.CTk):
         self.create_header()
 
         # Create tabview for different sections
-        self.tabview = ctk.CTkTabview(self.main_container, height=700)
-        self.tabview.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+        self.tabview = ctk.CTkTabview(self.main_container, height=750)
+        self.tabview.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
         # Add tabs
         self.tab_dashboard = self.tabview.add("Dashboard")
         self.tab_clients = self.tabview.add("Clients")
         self.tab_visits = self.tabview.add("Visits")
+        self.tab_review = self.tabview.add("Review")
         self.tab_materials = self.tabview.add("Materials")
         self.tab_import = self.tabview.add("Import Data")
 
@@ -62,6 +71,7 @@ class LandscapingApp(ctk.CTk):
         self.init_dashboard_tab()
         self.init_clients_tab()
         self.init_visits_tab()
+        self.init_review_tab()
         self.init_materials_tab()
         self.init_import_tab()
 
@@ -69,75 +79,387 @@ class LandscapingApp(ctk.CTk):
         self.current_client_id = None
         self.current_visit_id = None
 
-        # Load initial data
+        # Track which tabs have been loaded (lazy loading optimization)
+        self.tabs_loaded = {
+            'dashboard': False,
+            'clients': False,
+            'materials': False
+        }
+
+        # Set up tab change callback for lazy loading
+        self.tabview.configure(command=self.on_tab_change)
+
+        # Load only the dashboard initially (shown by default)
         self.refresh_dashboard()
-        self.refresh_clients_list()
-        self.refresh_materials_list()
+        self.tabs_loaded['dashboard'] = True
+
+    def get_ocr_scanner(self):
+        """Get OCR scanner with lazy initialization."""
+        if self.ocr_scanner is None:
+            self.ocr_scanner = OCRScanner()
+        return self.ocr_scanner
+
+    def on_tab_change(self):
+        """Handle tab change for lazy loading optimization."""
+        current_tab = self.tabview.get()
+
+        # Lazy load clients tab
+        if current_tab == "Clients" and not self.tabs_loaded['clients']:
+            self.refresh_clients_list()
+            self.tabs_loaded['clients'] = True
+
+        # Lazy load materials tab
+        elif current_tab == "Materials" and not self.tabs_loaded['materials']:
+            self.refresh_materials_list()
+            self.tabs_loaded['materials'] = True
 
     def create_header(self):
         """Create the application header with title and refresh button."""
         header_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
-        header_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
+        header_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=3)
         header_frame.grid_columnconfigure(0, weight=1)
 
         title = ctk.CTkLabel(
             header_frame,
             text="🌿 Landscaping Client Tracker",
-            font=ctk.CTkFont(size=20, weight="bold")
+            font=ctk.CTkFont(size=16, weight="bold")
         )
-        title.grid(row=0, column=0, sticky="w", padx=8, pady=8)
+        title.grid(row=0, column=0, sticky="w", padx=5, pady=3)
+
+        settings_btn = ctk.CTkButton(
+            header_frame,
+            text="⚙ Settings",
+            command=self.show_settings_dialog,
+            font=ctk.CTkFont(size=10),
+            height=26,
+            width=100
+        )
+        settings_btn.grid(row=0, column=1, padx=3, pady=3)
 
         refresh_btn = ctk.CTkButton(
             header_frame,
             text="Refresh All",
             command=self.refresh_all,
-            font=ctk.CTkFont(size=12),
-            height=32,
-            width=120
+            font=ctk.CTkFont(size=10),
+            height=26,
+            width=100
         )
-        refresh_btn.grid(row=0, column=1, padx=8, pady=8)
+        refresh_btn.grid(row=0, column=2, padx=3, pady=3)
 
     # ==================== DASHBOARD TAB ====================
 
     def init_dashboard_tab(self):
         """Initialize the dashboard tab with client statistics."""
         self.tab_dashboard.grid_columnconfigure(0, weight=1)
-        self.tab_dashboard.grid_rowconfigure(1, weight=1)
+        self.tab_dashboard.grid_rowconfigure(2, weight=1)
 
-        # Header
+        # Header with filter
+        header_frame = ctk.CTkFrame(self.tab_dashboard, fg_color="transparent")
+        header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
+        header_frame.grid_columnconfigure(1, weight=1)
+
         header = ctk.CTkLabel(
-            self.tab_dashboard,
-            text="Client Overview & Profitability",
-            font=ctk.CTkFont(size=16, weight="bold")
+            header_frame,
+            text="Client Overview",
+            font=ctk.CTkFont(size=14, weight="bold")
         )
-        header.grid(row=0, column=0, sticky="w", padx=15, pady=12)
+        header.grid(row=0, column=0, sticky="w", padx=5)
 
-        # Scrollable frame for client cards
-        self.dashboard_scroll = ctk.CTkScrollableFrame(self.tab_dashboard)
-        self.dashboard_scroll.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
-        self.dashboard_scroll.grid_columnconfigure(0, weight=1)
+        # Client filter dropdown
+        filter_label = ctk.CTkLabel(header_frame, text="Filter:", font=ctk.CTkFont(size=11))
+        filter_label.grid(row=0, column=1, sticky="e", padx=(0, 5))
+
+        self.dashboard_filter_var = tk.StringVar(value="📉 Losing Money")
+        self.dashboard_filter_menu = ctk.CTkOptionMenu(
+            header_frame,
+            variable=self.dashboard_filter_var,
+            values=["📉 Losing Money", "📈 Earning Money"],
+            command=self.on_dashboard_filter_change,
+            font=ctk.CTkFont(size=11),
+            height=28,
+            width=180
+        )
+        self.dashboard_filter_menu.grid(row=0, column=2, sticky="e", padx=5)
+
+        # Client info frame (for selected client card)
+        self.dashboard_client_frame = ctk.CTkFrame(self.tab_dashboard)
+        self.dashboard_client_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
+        self.dashboard_client_frame.grid_columnconfigure(0, weight=1)
+
+        # Visualization frame
+        viz_frame = ctk.CTkFrame(self.tab_dashboard)
+        viz_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+        viz_frame.grid_columnconfigure(0, weight=1)
+        viz_frame.grid_rowconfigure(1, weight=1)
+
+        # Visualization header with toggle
+        viz_header_frame = ctk.CTkFrame(viz_frame, fg_color="transparent")
+        viz_header_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=3)
+
+        viz_title = ctk.CTkLabel(
+            viz_header_frame,
+            text="Visit Trends (This Year)",
+            font=ctk.CTkFont(size=13, weight="bold")
+        )
+        viz_title.pack(side="left", padx=5)
+
+        self.viz_mode_var = tk.StringVar(value="time")
+        viz_toggle_frame = ctk.CTkFrame(viz_header_frame, fg_color="transparent")
+        viz_toggle_frame.pack(side="right", padx=5)
+
+        time_radio = ctk.CTkRadioButton(
+            viz_toggle_frame,
+            text="Time/Visit",
+            variable=self.viz_mode_var,
+            value="time",
+            command=self.update_visualization,
+            font=ctk.CTkFont(size=10)
+        )
+        time_radio.pack(side="left", padx=3)
+
+        cost_radio = ctk.CTkRadioButton(
+            viz_toggle_frame,
+            text="Cost/Visit",
+            variable=self.viz_mode_var,
+            value="cost",
+            command=self.update_visualization,
+            font=ctk.CTkFont(size=10)
+        )
+        cost_radio.pack(side="left", padx=3)
+
+        # Canvas for matplotlib
+        self.viz_canvas_frame = ctk.CTkFrame(viz_frame)
+        self.viz_canvas_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.viz_canvas_frame.grid_columnconfigure(0, weight=1)
+        self.viz_canvas_frame.grid_rowconfigure(0, weight=1)
+
+        self.current_viz_client_id = None
 
     def refresh_dashboard(self):
         """Refresh the dashboard with updated statistics."""
-        # Clear existing widgets
-        for widget in self.dashboard_scroll.winfo_children():
+        # Get all client statistics
+        stats_list = self.db.get_all_client_statistics(active_only=True)
+
+        if not stats_list:
+            # Clear filter options
+            self.dashboard_filter_menu.configure(values=["No clients"])
+            self.dashboard_filter_var.set("No clients")
+
+            # Clear client frame
+            for widget in self.dashboard_client_frame.winfo_children():
+                widget.destroy()
+
+            no_data = ctk.CTkLabel(
+                self.dashboard_client_frame,
+                text="No active clients. Add clients in the Clients tab.",
+                font=ctk.CTkFont(size=13)
+            )
+            no_data.pack(pady=20)
+
+            # Clear visualization
+            for widget in self.viz_canvas_frame.winfo_children():
+                widget.destroy()
+            return
+
+        # Build filter options
+        filter_options = ["📉 Losing Money", "📈 Earning Money", "---"]
+
+        # Sort clients by name and add to filter
+        sorted_stats = sorted(stats_list, key=lambda x: x['client_name'])
+        for stats in sorted_stats:
+            filter_options.append(stats['client_name'])
+
+        # Update filter dropdown
+        self.dashboard_filter_menu.configure(values=filter_options)
+
+        # Keep current selection if valid, otherwise default to "Losing Money"
+        current = self.dashboard_filter_var.get()
+        if current not in filter_options:
+            self.dashboard_filter_var.set("📉 Losing Money")
+
+        # Update display
+        self.on_dashboard_filter_change(self.dashboard_filter_var.get())
+
+    def on_dashboard_filter_change(self, selection):
+        """Handle dashboard filter selection change."""
+        # Clear client frame
+        for widget in self.dashboard_client_frame.winfo_children():
             widget.destroy()
 
         # Get all client statistics
         stats_list = self.db.get_all_client_statistics(active_only=True)
 
         if not stats_list:
-            no_data = ctk.CTkLabel(
-                self.dashboard_scroll,
-                text="No active clients. Add clients in the Clients tab.",
-                font=ctk.CTkFont(size=16)
-            )
-            no_data.grid(row=0, column=0, pady=50)
             return
 
-        # Create a card for each client
-        for idx, stats in enumerate(stats_list):
-            self.create_client_card(self.dashboard_scroll, stats, idx)
+        # Filter based on selection
+        if selection == "📉 Losing Money":
+            filtered = [s for s in stats_list if not s['is_profitable']]
+            if filtered:
+                # Show first losing money client
+                self.create_client_card(self.dashboard_client_frame, filtered[0], 0)
+                self.current_viz_client_id = filtered[0]['client_id']
+            else:
+                msg = ctk.CTkLabel(
+                    self.dashboard_client_frame,
+                    text="No clients are losing money! 🎉",
+                    font=ctk.CTkFont(size=13)
+                )
+                msg.pack(pady=20)
+                self.current_viz_client_id = None
+        elif selection == "📈 Earning Money":
+            filtered = [s for s in stats_list if s['is_profitable']]
+            if filtered:
+                # Show first earning money client
+                self.create_client_card(self.dashboard_client_frame, filtered[0], 0)
+                self.current_viz_client_id = filtered[0]['client_id']
+            else:
+                msg = ctk.CTkLabel(
+                    self.dashboard_client_frame,
+                    text="No profitable clients yet.",
+                    font=ctk.CTkFont(size=13)
+                )
+                msg.pack(pady=20)
+                self.current_viz_client_id = None
+        elif selection != "---" and selection != "No clients":
+            # Show specific client by name
+            client_stats = next((s for s in stats_list if s['client_name'] == selection), None)
+            if client_stats:
+                self.create_client_card(self.dashboard_client_frame, client_stats, 0)
+                self.current_viz_client_id = client_stats['client_id']
+
+        # Update visualization
+        self.update_visualization()
+
+    def update_visualization(self, *args):
+        """Update the visualization chart based on current client and mode."""
+        # Lazy import matplotlib and related libraries (optimization)
+        import matplotlib
+        matplotlib.use('TkAgg')
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        import matplotlib.dates as mdates
+        import numpy as np
+        from scipy.interpolate import make_interp_spline
+
+        # Clear existing visualization
+        for widget in self.viz_canvas_frame.winfo_children():
+            widget.destroy()
+
+        if not self.current_viz_client_id:
+            return
+
+        # Get visit data for current year
+        current_year = datetime.now().year
+        visits = self.db.get_client_visits(self.current_viz_client_id)
+
+        # Filter to current year
+        visits_this_year = [
+            v for v in visits
+            if datetime.strptime(v['visit_date'], '%Y-%m-%d').year == current_year
+        ]
+
+        if not visits_this_year:
+            no_data = ctk.CTkLabel(
+                self.viz_canvas_frame,
+                text="No visits recorded this year",
+                font=ctk.CTkFont(size=11)
+            )
+            no_data.pack(pady=20)
+            return
+
+        # Get hourly rate for cost calculation
+        hourly_rate = self.db.get_hourly_rate()
+
+        # Group visits by month and calculate averages
+        monthly_data = defaultdict(list)
+
+        for visit in visits_this_year:
+            visit_date = datetime.strptime(visit['visit_date'], '%Y-%m-%d')
+            month_key = visit_date.replace(day=1)  # First day of month as key
+
+            if self.viz_mode_var.get() == "time":
+                monthly_data[month_key].append(visit['duration_minutes'])
+            else:  # cost mode
+                labor_cost = (visit['duration_minutes'] / 60) * 2 * hourly_rate
+                visit_materials = self.db.get_visit_materials(visit['id'])
+                material_cost = sum(vm['quantity'] * vm['cost_at_time'] for vm in visit_materials)
+                total_cost = labor_cost + material_cost
+                monthly_data[month_key].append(total_cost)
+
+        # Calculate monthly averages
+        months = sorted(monthly_data.keys())
+        averages = [np.mean(monthly_data[month]) for month in months]
+
+        if len(months) == 0:
+            no_data = ctk.CTkLabel(
+                self.viz_canvas_frame,
+                text="No data available",
+                font=ctk.CTkFont(size=11)
+            )
+            no_data.pack(pady=20)
+            return
+
+        # Set labels
+        if self.viz_mode_var.get() == "time":
+            ylabel = "Avg Time (minutes)"
+            title = "Average Time per Visit by Month"
+        else:
+            ylabel = "Avg Cost ($)"
+            title = "Average Cost per Visit by Month"
+
+        # Create matplotlib figure
+        fig = Figure(figsize=(8, 3), dpi=100, facecolor='#2b2b2b')
+        ax = fig.add_subplot(111)
+        ax.set_facecolor('#2b2b2b')
+
+        # Plot with smooth curve if we have enough data points
+        if len(months) >= 3:
+            # Convert dates to numbers for interpolation
+            months_num = mdates.date2num(months)
+
+            # Create smooth curve using spline interpolation
+            months_smooth = np.linspace(months_num.min(), months_num.max(), 300)
+            try:
+                spl = make_interp_spline(months_num, averages, k=min(3, len(months)-1))
+                averages_smooth = spl(months_smooth)
+
+                # Plot smooth curve
+                ax.plot(mdates.num2date(months_smooth), averages_smooth,
+                       linestyle='-', linewidth=2.5, color='#1f77b4', alpha=0.8)
+                # Plot actual data points
+                ax.plot(months, averages, marker='o', linestyle='',
+                       markersize=6, color='#ff7f0e', alpha=0.9, zorder=5)
+            except:
+                # Fallback to regular plot if spline fails
+                ax.plot(months, averages, marker='o', linestyle='-',
+                       linewidth=2, markersize=6, color='#1f77b4')
+        else:
+            # Not enough points for smooth curve, use regular plot
+            ax.plot(months, averages, marker='o', linestyle='-',
+                   linewidth=2, markersize=6, color='#1f77b4')
+
+        ax.set_xlabel("Month", fontsize=12, color='white', fontweight='bold')
+        ax.set_ylabel(ylabel, fontsize=12, color='white', fontweight='bold')
+        ax.set_title(title, fontsize=14, color='white', pad=8, fontweight='bold')
+        ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+        ax.tick_params(colors='white', labelsize=11)
+
+        # Format x-axis to show month names
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%b'))
+        ax.xaxis.set_major_locator(mdates.MonthLocator())
+
+        # Adjust layout
+        fig.tight_layout(pad=1.5)
+
+        # Embed in tkinter
+        canvas = FigureCanvasTkAgg(fig, master=self.viz_canvas_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+        # Update spine colors for dark theme
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#555555')
 
     def create_client_card(self, parent, stats, row):
         """Create a visual card showing client statistics."""
@@ -152,62 +474,108 @@ class LandscapingApp(ctk.CTk):
             status_color = "red"
 
         # Card frame
-        card = ctk.CTkFrame(parent, border_width=2, border_color=border_color)
-        card.grid(row=row, column=0, sticky="ew", padx=8, pady=6)
+        card = ctk.CTkFrame(parent, border_width=1, border_color=border_color)
+        card.grid(row=row, column=0, sticky="ew", padx=3, pady=3)
         card.grid_columnconfigure(1, weight=1)
 
         # Client name
         name_label = ctk.CTkLabel(
             card,
             text=stats['client_name'],
-            font=ctk.CTkFont(size=14, weight="bold")
+            font=ctk.CTkFont(size=12, weight="bold")
         )
-        name_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 4))
+        name_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(5, 2))
 
         # Status indicator
         status_label = ctk.CTkLabel(
             card,
             text=status_text,
-            font=ctk.CTkFont(size=11, weight="bold"),
+            font=ctk.CTkFont(size=9, weight="bold"),
             text_color=status_color
         )
-        status_label.grid(row=0, column=2, padx=12, pady=(10, 4))
+        status_label.grid(row=0, column=2, padx=6, pady=(5, 2))
 
         # Statistics grid
         stats_frame = ctk.CTkFrame(card, fg_color="transparent")
-        stats_frame.grid(row=1, column=0, columnspan=3, sticky="ew", padx=20, pady=10)
+        stats_frame.grid(row=1, column=0, columnspan=3, sticky="ew", padx=8, pady=4)
 
         # Create stat items
         stat_items = [
-            ("Visits Recorded:", f"{stats['visit_count']}"),
-            ("Total Material Costs:", f"${stats['total_material_cost']:.2f}"),
-            ("Avg Cost per Visit:", f"${stats['avg_cost_per_visit']:.2f}"),
-            ("Est. Visits/Year:", f"{stats['visits_per_year']:.1f}"),
-            ("Calculated Monthly Cost:", f"${stats['calculated_monthly_cost']:.2f}"),
-            ("Actual Monthly Charge:", f"${stats['actual_monthly_charge']:.2f}"),
-            ("Monthly Profit/Loss:", f"${stats['monthly_profit_loss']:.2f}"),
+            ("Total Visits (this year):", f"{stats['visits_this_year']}", None),
+            ("Configured Materials/Services (Yearly):", f"${stats['configured_materials_cost_yearly'] + stats['configured_services_cost_yearly']:.2f}", "Total yearly cost from assigned materials/services"),
+            ("Projected Labor Cost (Yearly):", f"${stats['projected_yearly_labor_cost']:.2f}", "Estimated labor cost for 52 visits/year"),
+            ("Total Material Costs:", f"${stats['total_material_cost']:.2f}", "Includes configured materials + materials from visits"),
+            ("Total Services Costs:", f"${stats['total_service_cost']:.2f}", "Includes configured services + services from visits"),
+            ("Avg Time per Visit:", f"{stats['avg_time_per_visit']:.1f} min",
+             f"Shortest: {stats['min_time_per_visit']:.1f} min\nLongest: {stats['max_time_per_visit']:.1f} min"),
+            ("Est Yearly Cost:", f"${stats['est_yearly_cost']:.2f}", "Labor + configured materials/services"),
+            ("Proposed Monthly Rate:", f"${stats['proposed_monthly_rate']:.2f}", "Yearly cost ÷ 12 months"),
+            ("Actual Monthly Charge:", f"${stats['actual_monthly_charge']:.2f}", None),
+            ("Monthly Profit/Loss:", f"${stats['monthly_profit_loss']:.2f}", None),
         ]
 
-        for i, (label, value) in enumerate(stat_items):
+        for i, item in enumerate(stat_items):
+            label, value = item[0], item[1]
+            tooltip_text = item[2] if len(item) > 2 else None
+
             col = i % 2
             row_pos = i // 2
 
             item_frame = ctk.CTkFrame(stats_frame, fg_color="transparent")
-            item_frame.grid(row=row_pos, column=col, sticky="w", padx=12, pady=3)
+            item_frame.grid(row=row_pos, column=col, sticky="w", padx=6, pady=1)
 
             lbl = ctk.CTkLabel(
                 item_frame,
                 text=label,
-                font=ctk.CTkFont(size=11)
+                font=ctk.CTkFont(size=9)
             )
-            lbl.grid(row=0, column=0, sticky="w", padx=(0, 8))
+            lbl.grid(row=0, column=0, sticky="w", padx=(0, 4))
 
             val = ctk.CTkLabel(
                 item_frame,
                 text=value,
-                font=ctk.CTkFont(size=11, weight="bold")
+                font=ctk.CTkFont(size=9, weight="bold")
             )
             val.grid(row=0, column=1, sticky="w")
+
+            # Add tooltip if available
+            if tooltip_text:
+                info_label = ctk.CTkLabel(
+                    item_frame,
+                    text="?",
+                    font=ctk.CTkFont(size=8, weight="bold"),
+                    text_color="gray",
+                    cursor="hand2"
+                )
+                info_label.grid(row=0, column=2, sticky="w", padx=(2, 0))
+
+                # Create tooltip
+                def create_tooltip(widget, text):
+                    def show_tooltip(event):
+                        tooltip = ctk.CTkToplevel()
+                        tooltip.wm_overrideredirect(True)
+                        tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+
+                        label = ctk.CTkLabel(
+                            tooltip,
+                            text=text,
+                            font=ctk.CTkFont(size=10),
+                            fg_color=("gray85", "gray20"),
+                            corner_radius=5
+                        )
+                        label.pack(padx=8, pady=6)
+
+                        widget.tooltip = tooltip
+
+                    def hide_tooltip(event):
+                        if hasattr(widget, 'tooltip'):
+                            widget.tooltip.destroy()
+                            del widget.tooltip
+
+                    widget.bind("<Enter>", show_tooltip)
+                    widget.bind("<Leave>", hide_tooltip)
+
+                create_tooltip(info_label, tooltip_text)
 
     # ==================== CLIENTS TAB ====================
 
@@ -237,28 +605,31 @@ class LandscapingApp(ctk.CTk):
             text="Show Inactive Clients",
             variable=self.show_inactive_var,
             command=self.refresh_clients_list,
-            font=ctk.CTkFont(size=13)
+            font=ctk.CTkFont(size=11)
         )
-        inactive_check.grid(row=1, column=0, sticky="w", padx=15, pady=5)
+        inactive_check.grid(row=1, column=0, sticky="w", padx=12, pady=3)
 
-        # Client listbox
-        self.clients_listbox = tk.Listbox(
-            left_frame,
-            font=("Arial", 13),
-            selectmode=tk.SINGLE
-        )
-        self.clients_listbox.grid(row=2, column=0, sticky="nsew", padx=15, pady=(5, 10))
-        self.clients_listbox.bind('<<ListboxSelect>>', self.on_client_select)
+        # Client list with button-style items
+        self.clients_scroll_frame = ctk.CTkScrollableFrame(left_frame)
+        self.clients_scroll_frame.grid(row=2, column=0, sticky="nsew", padx=8, pady=(3, 8))
+        self.clients_scroll_frame.grid_columnconfigure(0, weight=1)
+
+        # Increase scroll speed
+        self.clients_scroll_frame._parent_canvas.configure(yscrollincrement=20)
+
+        # Track selected client button
+        self.selected_client_button = None
+        self.client_buttons = []
 
         # Add client button
         add_btn = ctk.CTkButton(
             left_frame,
             text="+ Add New Client",
             command=self.add_new_client,
-            font=ctk.CTkFont(size=14),
-            height=40
+            font=ctk.CTkFont(size=12),
+            height=35
         )
-        add_btn.grid(row=3, column=0, sticky="ew", padx=15, pady=(0, 15))
+        add_btn.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 12))
 
         # Right side - Client details and materials
         right_frame = ctk.CTkFrame(self.tab_clients)
@@ -295,30 +666,69 @@ class LandscapingApp(ctk.CTk):
         placeholder.grid(row=0, column=0, pady=50)
 
     def refresh_clients_list(self):
-        """Refresh the clients listbox."""
-        self.clients_listbox.delete(0, tk.END)
+        """Refresh the clients list with button-style items."""
+        # Clear existing buttons
+        for widget in self.clients_scroll_frame.winfo_children():
+            widget.destroy()
+
+        self.client_buttons = []
+        self.selected_client_button = None
+
         active_only = not self.show_inactive_var.get()
         clients = self.db.get_all_clients(active_only=active_only)
-
-        for client in clients:
-            display_name = client['name']
-            if not client['is_active']:
-                display_name += " (Inactive)"
-            self.clients_listbox.insert(tk.END, display_name)
-            self.clients_listbox.itemconfig(tk.END, {'selectbackground': '#1f6aa5'})
 
         # Store client IDs for reference
         self.client_ids = [c['id'] for c in clients]
 
-    def on_client_select(self, event):
-        """Handle client selection from listbox."""
-        selection = self.clients_listbox.curselection()
-        if not selection:
-            return
+        # Create button for each client
+        for idx, client in enumerate(clients):
+            display_name = client['name']
+            if not client['is_active']:
+                display_name += " (Inactive)"
 
-        idx = selection[0]
-        self.current_client_id = self.client_ids[idx]
-        self.show_client_details(self.current_client_id)
+            def create_click_handler(client_id, button):
+                def handler():
+                    self.on_client_button_click(client_id, button)
+                return handler
+
+            btn = ctk.CTkButton(
+                self.clients_scroll_frame,
+                text=display_name,
+                font=ctk.CTkFont(size=17),
+                height=51,
+                corner_radius=8,
+                fg_color="#3a3a3a",
+                hover_color="#4a4a4a",
+                text_color="white",
+                anchor="w",
+                border_width=0
+            )
+            btn.grid(row=idx, column=0, sticky="ew", padx=5, pady=4)
+
+            # Store reference and set click handler
+            self.client_buttons.append(btn)
+            btn.configure(command=create_click_handler(client['id'], btn))
+
+    def on_client_button_click(self, client_id, button):
+        """Handle client button click."""
+        # Reset previous selection
+        if self.selected_client_button:
+            self.selected_client_button.configure(
+                fg_color="#3a3a3a",
+                border_width=0
+            )
+
+        # Make selected button appear pressed with darker color and inner border
+        button.configure(
+            fg_color="#154a78",
+            border_width=2,
+            border_color="#0d3552"
+        )
+        self.selected_client_button = button
+
+        # Show client details
+        self.show_client_details(client_id)
+        self.current_client_id = client_id
 
     def show_client_details(self, client_id: int):
         """Display detailed information for a selected client."""
@@ -423,67 +833,435 @@ class LandscapingApp(ctk.CTk):
             text="Materials & Services for this Client",
             font=ctk.CTkFont(size=16, weight="bold")
         )
-        materials_header.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(20, 10))
+        materials_header.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(20, 5))
         row += 1
 
-        # Materials list
+        # Create materials table frame
+        self.materials_table_frame = ctk.CTkFrame(self.client_details_frame)
+        self.materials_table_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
+        self.materials_table_frame.grid_columnconfigure(0, weight=2)  # Material name
+        self.materials_table_frame.grid_columnconfigure(1, weight=1)  # Cost
+        self.materials_table_frame.grid_columnconfigure(2, weight=1)  # Unit
+        self.materials_table_frame.grid_columnconfigure(3, weight=1)  # Total
+        self.materials_table_frame.grid_columnconfigure(4, weight=0)  # Delete checkbox
+
+        # Store material table data
+        self.current_client_id = client_id
+        self.material_rows = []
+        self.materials_have_changes = False
+        self.num_empty_rows = 1
+
+        # Get data
         client_materials = self.db.get_client_materials(client_id)
+        self.all_materials = self.db.get_all_materials()
 
-        if client_materials:
-            for mat in client_materials:
-                mat_frame = ctk.CTkFrame(self.client_details_frame)
-                mat_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
-                mat_frame.grid_columnconfigure(1, weight=1)
+        # Build the table
+        self.rebuild_materials_table(client_materials, num_empty_rows=1)
 
-                name_lbl = ctk.CTkLabel(
-                    mat_frame,
-                    text=mat['name'],
-                    font=ctk.CTkFont(size=13, weight="bold")
-                )
-                name_lbl.grid(row=0, column=0, sticky="w", padx=10, pady=10)
+        row += 1
 
-                cost_text = f"${mat['effective_cost']:.2f}"
-                if mat['is_global']:
-                    cost_text += " (Global)"
-                else:
-                    cost_text += " (Custom)"
+    def rebuild_materials_table(self, existing_materials, num_empty_rows=1):
+        """Build or rebuild the materials table."""
+        # Clear existing widgets
+        for widget in self.materials_table_frame.winfo_children():
+            widget.destroy()
 
-                cost_lbl = ctk.CTkLabel(
-                    mat_frame,
-                    text=cost_text,
-                    font=ctk.CTkFont(size=13)
-                )
-                cost_lbl.grid(row=0, column=1, sticky="e", padx=10, pady=10)
+        self.material_rows = []
+        self.num_empty_rows = num_empty_rows
+        current_row = 0
 
-                remove_btn = ctk.CTkButton(
-                    mat_frame,
-                    text="Remove",
-                    command=lambda m=mat: self.remove_client_material(client_id, m['material_id']),
-                    width=80,
-                    height=30,
-                    fg_color="red"
-                )
-                remove_btn.grid(row=0, column=2, padx=10, pady=10)
-                row += 1
-        else:
-            no_mat = ctk.CTkLabel(
-                self.client_details_frame,
-                text="No materials assigned yet",
-                font=ctk.CTkFont(size=13),
+        # Table headers
+        headers = ["Material/Service", "Cost ($)", "Unit", "Total", "Delete"]
+        for col, header_text in enumerate(headers):
+            header = ctk.CTkLabel(
+                self.materials_table_frame,
+                text=header_text,
+                font=ctk.CTkFont(size=11, weight="bold"),
                 text_color="gray"
             )
-            no_mat.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=5)
-            row += 1
+            header.grid(row=current_row, column=col, padx=5, pady=3, sticky="w")
+        current_row += 1
 
-        # Add material button
-        add_mat_btn = ctk.CTkButton(
-            self.client_details_frame,
-            text="+ Add Material/Service",
-            command=lambda: self.add_material_to_client(client_id),
-            font=ctk.CTkFont(size=14),
-            height=40
+        # Calculate total cost from materials
+        total_materials_cost = 0
+        for mat in existing_materials:
+            # Use total_cost from database query (effective_cost * multiplier)
+            total_materials_cost += mat.get('total_cost', 0)
+
+        # Add existing materials
+        for mat in existing_materials:
+            self.add_material_row_to_table(current_row, mat)
+            current_row += 1
+
+        # Add empty rows for new materials
+        for i in range(num_empty_rows):
+            self.add_material_row_to_table(current_row, None)
+            current_row += 1
+
+        # Show total cost
+        total_frame = ctk.CTkFrame(self.materials_table_frame, fg_color="transparent")
+        total_frame.grid(row=current_row, column=0, columnspan=5, sticky="ew", padx=5, pady=10)
+
+        total_label = ctk.CTkLabel(
+            total_frame,
+            text="Total Materials & Services Cost:",
+            font=ctk.CTkFont(size=13, weight="bold")
         )
-        add_mat_btn.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        total_label.pack(side=tk.LEFT, padx=5)
+
+        total_value = ctk.CTkLabel(
+            total_frame,
+            text=f"${total_materials_cost:.2f}",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#4CAF50"
+        )
+        total_value.pack(side=tk.LEFT, padx=5)
+        current_row += 1
+
+        # Add row button
+        add_row_btn = ctk.CTkButton(
+            self.materials_table_frame,
+            text="+ Add Another Row",
+            command=self.add_another_material_row,
+            font=ctk.CTkFont(size=11),
+            height=28,
+            fg_color="transparent",
+            hover_color="#3a3a3a"
+        )
+        add_row_btn.grid(row=current_row, column=0, columnspan=5, sticky="w", padx=5, pady=5)
+        current_row += 1
+
+        # Save button (initially disabled)
+        self.materials_save_btn = ctk.CTkButton(
+            self.materials_table_frame,
+            text="Save Changes",
+            command=self.save_all_material_changes,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            height=35,
+            fg_color="gray",
+            hover_color="gray",
+            state="disabled"
+        )
+        self.materials_save_btn.grid(row=current_row, column=0, columnspan=5, sticky="ew", padx=5, pady=10)
+
+    def add_material_row_to_table(self, row_num, existing_material=None):
+        """Add a single row to the materials table."""
+        # Get materials not already assigned
+        assigned_material_ids = {row['existing']['material_id'] for row in self.material_rows if row['existing']}
+        available_materials = [m for m in self.all_materials if m['id'] not in assigned_material_ids or (existing_material and m['id'] == existing_material['material_id'])]
+
+        if not available_materials and not existing_material:
+            return  # No materials to add
+
+        # Material dropdown
+        material_names = [m['name'] for m in available_materials]
+        selected_material = existing_material['name'] if existing_material else (material_names[0] if material_names else "")
+
+        material_var = tk.StringVar(value=selected_material)
+        material_dropdown = ctk.CTkOptionMenu(
+            self.materials_table_frame,
+            variable=material_var,
+            values=material_names if material_names else ["No materials available"],
+            font=ctk.CTkFont(size=11),
+            height=28,
+            dynamic_resizing=False
+        )
+        material_dropdown.grid(row=row_num, column=0, padx=5, pady=3, sticky="ew")
+
+        # Cost entry
+        cost_entry = ctk.CTkEntry(
+            self.materials_table_frame,
+            placeholder_text="Auto",
+            font=ctk.CTkFont(size=11),
+            height=28
+        )
+        cost_entry.grid(row=row_num, column=1, padx=5, pady=3, sticky="ew")
+
+        if existing_material and existing_material.get('custom_cost'):
+            cost_entry.insert(0, str(existing_material['custom_cost']))
+
+        # Unit entry
+        unit_entry = ctk.CTkEntry(
+            self.materials_table_frame,
+            placeholder_text="1",
+            font=ctk.CTkFont(size=11),
+            height=28,
+            width=60
+        )
+        unit_entry.grid(row=row_num, column=2, padx=5, pady=3, sticky="ew")
+
+        if existing_material:
+            unit_entry.insert(0, str(existing_material.get('multiplier', 1)))
+
+        # Total label (cost × unit)
+        total_var = tk.StringVar(value="$0.00")
+        total_label = ctk.CTkLabel(
+            self.materials_table_frame,
+            textvariable=total_var,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#4CAF50"
+        )
+        total_label.grid(row=row_num, column=3, padx=5, pady=3, sticky="w")
+
+        # Calculate initial total if existing material
+        if existing_material:
+            total_var.set(f"${existing_material.get('total_cost', 0):.2f}")
+
+        # Delete checkbox
+        delete_var = tk.BooleanVar(value=False)
+        delete_check = ctk.CTkCheckBox(
+            self.materials_table_frame,
+            text="",
+            variable=delete_var,
+            width=28,
+            command=self.on_material_change
+        )
+        delete_check.grid(row=row_num, column=4, padx=5, pady=3)
+
+        # Function to update total label
+        def update_total_label(*args):
+            # Get the effective cost
+            selected_name = material_var.get()
+            selected_mat = next((m for m in self.all_materials if m['name'] == selected_name), None)
+
+            cost_str = cost_entry.get().strip()
+            if cost_str and cost_str != "Auto":
+                try:
+                    cost = float(cost_str)
+                except ValueError:
+                    cost = 0
+            elif selected_mat:
+                cost = selected_mat['default_cost']
+            else:
+                cost = 0
+
+            # Get the unit
+            unit_str = unit_entry.get().strip()
+            try:
+                unit = float(unit_str) if unit_str else 1.0
+            except ValueError:
+                unit = 1.0
+
+            # Calculate and display total
+            total = cost * unit
+            total_var.set(f"${total:.2f}")
+
+        # Auto-update cost when material selection changes
+        def on_material_dropdown_change(*args):
+            selected_name = material_var.get()
+            selected_mat = next((m for m in self.all_materials if m['name'] == selected_name), None)
+            if selected_mat:
+                current_cost = cost_entry.get().strip()
+                if not current_cost or current_cost == "Auto":
+                    cost_entry.delete(0, tk.END)
+                    cost_entry.configure(placeholder_text=f"{selected_mat['default_cost']:.2f}")
+            update_total_label()
+            self.on_material_change()
+
+        material_var.trace('w', on_material_dropdown_change)
+        on_material_dropdown_change()  # Set initial placeholder
+
+        # Bind change detection to entries
+        def on_entry_change(e):
+            update_total_label()
+            self.on_material_change()
+
+        cost_entry.bind('<KeyRelease>', on_entry_change)
+        unit_entry.bind('<KeyRelease>', on_entry_change)
+
+        # Store row reference
+        row_data = {
+            'row_num': row_num,
+            'material_var': material_var,
+            'cost_entry': cost_entry,
+            'unit_entry': unit_entry,
+            'delete_var': delete_var,
+            'total_var': total_var,
+            'existing': existing_material,
+            'widgets': [material_dropdown, cost_entry, unit_entry, total_label, delete_check]
+        }
+        self.material_rows.append(row_data)
+
+    def on_material_change(self):
+        """Detect if there are any changes in the materials table."""
+        # Check if save button exists yet (it's created after rows)
+        if not hasattr(self, 'materials_save_btn') or self.materials_save_btn is None:
+            return
+
+        has_changes = False
+
+        # Get current state from database
+        db_materials = self.db.get_client_materials(self.current_client_id)
+        db_material_map = {m['material_id']: m for m in db_materials}
+
+        for row in self.material_rows:
+            # Check if this is a new row (no existing material)
+            if not row['existing']:
+                # Check if user has entered or selected anything meaningful
+                selected_name = row['material_var'].get()
+                cost_str = row['cost_entry'].get().strip()
+                unit_str = row['unit_entry'].get().strip()
+
+                # Has changes if: cost entered, unit entered, or material changed from initial
+                if cost_str or unit_str:
+                    has_changes = True
+                    break
+            else:
+                # Check if marked for deletion
+                if row['delete_var'].get():
+                    has_changes = True
+                    break
+
+                # Check if values changed
+                material_id = row['existing']['material_id']
+                if material_id in db_material_map:
+                    db_mat = db_material_map[material_id]
+
+                    # Check cost
+                    cost_str = row['cost_entry'].get().strip()
+                    current_cost = None
+                    if cost_str:
+                        try:
+                            current_cost = float(cost_str)
+                        except ValueError:
+                            pass
+
+                    db_cost = db_mat.get('custom_cost')
+                    if current_cost != db_cost:
+                        has_changes = True
+                        break
+
+                    # Check unit
+                    unit_str = row['unit_entry'].get().strip()
+                    current_unit = 1.0
+                    if unit_str:
+                        try:
+                            current_unit = float(unit_str)
+                        except ValueError:
+                            pass
+
+                    db_unit = db_mat.get('multiplier', 1.0)
+                    if abs(current_unit - db_unit) > 0.001:
+                        has_changes = True
+                        break
+
+        # Update save button state
+        try:
+            if has_changes:
+                self.materials_save_btn.configure(
+                    fg_color="green",
+                    hover_color="#00AA00",
+                    state="normal"
+                )
+            else:
+                self.materials_save_btn.configure(
+                    fg_color="gray",
+                    hover_color="gray",
+                    state="disabled"
+                )
+        except:
+            pass  # Button may not exist yet during construction
+
+    def add_another_material_row(self):
+        """Add another empty row to the materials table."""
+        # Simply increment the counter and add one more row without rebuilding everything
+        self.num_empty_rows += 1
+
+        # Find the next row number (before the buttons)
+        next_row = len(self.material_rows) + 1  # +1 for header
+
+        # Remove the total frame, add button and save button from grid temporarily
+        total_frame = None
+        add_btn = None
+        save_btn = None
+        for widget in self.materials_table_frame.winfo_children():
+            if isinstance(widget, ctk.CTkFrame) and widget.cget("fg_color") == "transparent":
+                # This is likely the total frame
+                total_frame = widget
+                widget.grid_forget()
+            elif isinstance(widget, ctk.CTkButton):
+                text = widget.cget("text")
+                if "Add Another Row" in text:
+                    add_btn = widget
+                    widget.grid_forget()
+                elif "Save Changes" in text:
+                    save_btn = widget
+                    widget.grid_forget()
+
+        # Add the new empty row
+        self.add_material_row_to_table(next_row, None)
+
+        # Re-grid the widgets
+        next_row += 1
+        if total_frame:
+            total_frame.grid(row=next_row, column=0, columnspan=5, sticky="ew", padx=5, pady=10)
+        next_row += 1
+        if add_btn:
+            add_btn.grid(row=next_row, column=0, columnspan=5, sticky="w", padx=5, pady=5)
+        next_row += 1
+        if save_btn:
+            save_btn.grid(row=next_row, column=0, columnspan=5, sticky="ew", padx=5, pady=10)
+
+    def save_all_material_changes(self):
+        """Save all changes in the materials table."""
+        client_id = self.current_client_id
+
+        try:
+            # Process deletions first
+            for row in self.material_rows:
+                if row['existing'] and row['delete_var'].get():
+                    self.db.remove_client_material(client_id, row['existing']['material_id'])
+
+            # Process updates and additions
+            for row in self.material_rows:
+                # Skip deleted rows
+                if row['delete_var'].get():
+                    continue
+
+                selected_name = row['material_var'].get()
+                if not selected_name or selected_name == "No materials available":
+                    continue
+
+                # Get the material
+                selected_material = next((m for m in self.all_materials if m['name'] == selected_name), None)
+                if not selected_material:
+                    continue
+
+                # Get cost
+                cost_str = row['cost_entry'].get().strip()
+                custom_cost = None
+                if cost_str and cost_str != "Auto":
+                    try:
+                        custom_cost = float(cost_str)
+                    except ValueError:
+                        messagebox.showerror("Error", f"Invalid cost value for {selected_name}")
+                        return
+
+                # Get unit/multiplier
+                unit_str = row['unit_entry'].get().strip()
+                try:
+                    multiplier = float(unit_str) if unit_str else 1.0
+                    if multiplier <= 0:
+                        messagebox.showerror("Error", f"Unit must be greater than 0 for {selected_name}")
+                        return
+                except ValueError:
+                    messagebox.showerror("Error", f"Invalid unit value for {selected_name}")
+                    return
+
+                # Add or update
+                if row['existing']:
+                    # Update existing
+                    self.db.remove_client_material(client_id, row['existing']['material_id'])
+                    self.db.add_client_material(client_id, selected_material['id'], custom_cost, multiplier)
+                else:
+                    # Add new
+                    self.db.add_client_material(client_id, selected_material['id'], custom_cost, multiplier)
+
+            # Refresh the view
+            self.show_client_details(client_id)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save changes: {str(e)}")
 
     def add_new_client(self):
         """Open dialog to add a new client."""
@@ -626,22 +1404,22 @@ class LandscapingApp(ctk.CTk):
         """Open dialog to add a material/service to a client."""
         dialog = ctk.CTkToplevel(self)
         dialog.title("Add Material/Service to Client")
-        dialog.geometry("500x400")
+        dialog.geometry("550x550")
         dialog.transient(self)
         dialog.grab_set()
 
         # Center the dialog
         dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
-        y = (dialog.winfo_screenheight() // 2) - (400 // 2)
-        dialog.geometry(f"500x400+{x}+{y}")
+        x = (dialog.winfo_screenwidth() // 2) - (550 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (550 // 2)
+        dialog.geometry(f"550x550+{x}+{y}")
 
         header = ctk.CTkLabel(
             dialog,
             text="Select Material/Service",
             font=ctk.CTkFont(size=18, weight="bold")
         )
-        header.pack(pady=20)
+        header.pack(pady=15)
 
         # Get available materials
         all_materials = self.db.get_all_materials()
@@ -660,13 +1438,17 @@ class LandscapingApp(ctk.CTk):
             msg.pack(pady=50)
             return
 
+        # Scrollable frame for content
+        scroll_frame = ctk.CTkScrollableFrame(dialog, height=350)
+        scroll_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
         # Material selection
-        material_label = ctk.CTkLabel(dialog, text="Material:", font=ctk.CTkFont(size=14))
+        material_label = ctk.CTkLabel(scroll_frame, text="Material:", font=ctk.CTkFont(size=14))
         material_label.pack(pady=(20, 5))
 
         material_var = tk.StringVar(value=available_materials[0]['name'])
         material_menu = ctk.CTkOptionMenu(
-            dialog,
+            scroll_frame,
             values=[m['name'] for m in available_materials],
             variable=material_var,
             font=ctk.CTkFont(size=13),
@@ -674,19 +1456,44 @@ class LandscapingApp(ctk.CTk):
         )
         material_menu.pack(pady=5, padx=20, fill="x")
 
-        # Custom cost option
+        # Custom cost option (only for global materials)
         custom_cost_var = tk.BooleanVar(value=False)
         custom_check = ctk.CTkCheckBox(
-            dialog,
+            scroll_frame,
             text="Use custom cost for this client",
             variable=custom_cost_var,
             font=ctk.CTkFont(size=13)
         )
-        custom_check.pack(pady=10)
 
-        cost_entry = ctk.CTkEntry(dialog, placeholder_text="Custom cost", height=35)
-        cost_entry.pack(pady=5, padx=20, fill="x")
-        cost_entry.configure(state="disabled")
+        cost_label = ctk.CTkLabel(scroll_frame, text="Cost:", font=ctk.CTkFont(size=14))
+        cost_entry = ctk.CTkEntry(scroll_frame, placeholder_text="Cost", height=35)
+
+        def update_cost_ui(*args):
+            """Update cost UI based on selected material."""
+            selected_name = material_var.get()
+            selected_material = next(m for m in available_materials if m['name'] == selected_name)
+
+            # Clear existing cost widgets
+            for widget in scroll_frame.winfo_children():
+                if widget in [custom_check, cost_label, cost_entry]:
+                    widget.pack_forget()
+
+            if selected_material['is_global']:
+                # Global material - show checkbox to enable custom cost
+                custom_check.pack(pady=10)
+                cost_entry.pack(pady=5, padx=20, fill="x")
+                if not custom_cost_var.get():
+                    cost_entry.configure(state="disabled")
+                    cost_entry.delete(0, tk.END)
+                else:
+                    cost_entry.configure(state="normal")
+            else:
+                # Non-global material - always show cost entry (no checkbox needed)
+                cost_label.pack(pady=(10, 5))
+                cost_entry.configure(state="normal")
+                cost_entry.delete(0, tk.END)
+                cost_entry.insert(0, str(selected_material.get('default_cost', '0.00')))
+                cost_entry.pack(pady=5, padx=20, fill="x")
 
         def toggle_cost_entry():
             if custom_cost_var.get():
@@ -696,20 +1503,71 @@ class LandscapingApp(ctk.CTk):
                 cost_entry.delete(0, tk.END)
 
         custom_check.configure(command=toggle_cost_entry)
+        material_var.trace('w', update_cost_ui)
+
+        # Initial UI setup
+        update_cost_ui()
+
+        # Unit option
+        multiplier_label = ctk.CTkLabel(
+            scroll_frame,
+            text="Unit (how many times this material is applied):",
+            font=ctk.CTkFont(size=12)
+        )
+        multiplier_label.pack(pady=(15, 5))
+
+        multiplier_entry = ctk.CTkEntry(
+            scroll_frame,
+            placeholder_text="Default: 1",
+            height=35
+        )
+        multiplier_entry.insert(0, "1")
+        multiplier_entry.pack(pady=5, padx=20, fill="x")
+
+        help_label = ctk.CTkLabel(
+            scroll_frame,
+            text="Example: Fertilizer applied 3 times → enter 3",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        help_label.pack(pady=(0, 10))
 
         def save_material():
             selected_name = material_var.get()
             selected_material = next(m for m in available_materials if m['name'] == selected_name)
 
             custom_cost = None
-            if custom_cost_var.get():
+
+            # For non-global materials, cost is always required
+            if not selected_material['is_global']:
+                cost_str = cost_entry.get().strip()
+                if not cost_str:
+                    messagebox.showerror("Error", "Cost is required for non-global materials")
+                    return
+                try:
+                    custom_cost = float(cost_str)
+                except ValueError:
+                    messagebox.showerror("Error", "Cost must be a valid number")
+                    return
+            # For global materials, only use custom cost if checkbox is checked
+            elif custom_cost_var.get():
                 try:
                     custom_cost = float(cost_entry.get())
                 except ValueError:
                     messagebox.showerror("Error", "Custom cost must be a valid number")
                     return
 
-            self.db.add_client_material(client_id, selected_material['id'], custom_cost)
+            # Get multiplier
+            try:
+                multiplier = float(multiplier_entry.get())
+                if multiplier <= 0:
+                    messagebox.showerror("Error", "Unit must be greater than 0")
+                    return
+            except ValueError:
+                messagebox.showerror("Error", "Unit must be a valid number")
+                return
+
+            self.db.add_client_material(client_id, selected_material['id'], custom_cost, multiplier)
             messagebox.showinfo("Success", "Material added to client!")
             dialog.destroy()
             self.show_client_details(client_id)
@@ -930,29 +1788,33 @@ class LandscapingApp(ctk.CTk):
         )
         header.pack(pady=15)
 
+        # Scrollable frame for content
+        scroll_frame = ctk.CTkScrollableFrame(dialog, height=550)
+        scroll_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
         # Date
-        date_label = ctk.CTkLabel(dialog, text="Date (MM/DD/YYYY):", font=ctk.CTkFont(size=12))
+        date_label = ctk.CTkLabel(scroll_frame, text="Date (MM/DD/YYYY):", font=ctk.CTkFont(size=12))
         date_label.pack(pady=(8, 4))
-        date_entry = ctk.CTkEntry(dialog, placeholder_text="01/15/2024", height=32)
+        date_entry = ctk.CTkEntry(scroll_frame, placeholder_text="01/15/2024", height=32)
         date_entry.insert(0, datetime.now().strftime("%m/%d/%Y"))
         date_entry.pack(pady=4, padx=20, fill="x")
 
         # Start time
-        start_label = ctk.CTkLabel(dialog, text="Start Time (h:MM AM/PM):", font=ctk.CTkFont(size=12))
+        start_label = ctk.CTkLabel(scroll_frame, text="Start Time (h:MM AM/PM):", font=ctk.CTkFont(size=12))
         start_label.pack(pady=(8, 4))
-        start_entry = ctk.CTkEntry(dialog, placeholder_text="9:00 AM", height=32)
+        start_entry = ctk.CTkEntry(scroll_frame, placeholder_text="9:00 AM", height=32)
         start_entry.pack(pady=4, padx=20, fill="x")
 
         # End time
-        end_label = ctk.CTkLabel(dialog, text="End Time (h:MM AM/PM):", font=ctk.CTkFont(size=12))
+        end_label = ctk.CTkLabel(scroll_frame, text="End Time (h:MM AM/PM):", font=ctk.CTkFont(size=12))
         end_label.pack(pady=(8, 4))
-        end_entry = ctk.CTkEntry(dialog, placeholder_text="11:30 AM", height=32)
+        end_entry = ctk.CTkEntry(scroll_frame, placeholder_text="11:30 AM", height=32)
         end_entry.pack(pady=4, padx=20, fill="x")
 
         # Duration (calculated)
         duration_var = tk.StringVar(value="Duration will be calculated")
         duration_label = ctk.CTkLabel(
-            dialog,
+            scroll_frame,
             textvariable=duration_var,
             font=ctk.CTkFont(size=13),
             text_color="gray"
@@ -991,14 +1853,14 @@ class LandscapingApp(ctk.CTk):
         end_entry.bind('<KeyRelease>', lambda e: calculate_duration())
 
         # Notes
-        notes_label = ctk.CTkLabel(dialog, text="Notes:", font=ctk.CTkFont(size=14))
+        notes_label = ctk.CTkLabel(scroll_frame, text="Notes:", font=ctk.CTkFont(size=14))
         notes_label.pack(pady=(10, 5))
-        notes_entry = ctk.CTkTextbox(dialog, height=80)
+        notes_entry = ctk.CTkTextbox(scroll_frame, height=80)
         notes_entry.pack(pady=5, padx=20, fill="x")
 
         # Materials section
         materials_label = ctk.CTkLabel(
-            dialog,
+            scroll_frame,
             text="Materials Used (optional):",
             font=ctk.CTkFont(size=14, weight="bold")
         )
@@ -1006,8 +1868,8 @@ class LandscapingApp(ctk.CTk):
 
         # Get client materials
         client_materials = self.db.get_client_materials(client_id)
-        materials_frame = ctk.CTkScrollableFrame(dialog, height=150)
-        materials_frame.pack(pady=5, padx=20, fill="both", expand=True)
+        materials_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+        materials_frame.pack(pady=5, padx=20, fill="both")
 
         material_quantities = {}
         if client_materials:
@@ -1127,6 +1989,217 @@ class LandscapingApp(ctk.CTk):
             client_name = self.visit_client_var.get()
             if client_name in self.visit_clients_data:
                 self.load_client_visits(self.visit_clients_data[client_name])
+            self.refresh_dashboard()
+
+    # ==================== REVIEW TAB ====================
+
+    def init_review_tab(self):
+        """Initialize the review tab for flagged visits."""
+        self.tab_review.grid_columnconfigure(0, weight=1)
+        self.tab_review.grid_rowconfigure(1, weight=1)
+
+        # Header
+        header = ctk.CTkLabel(
+            self.tab_review,
+            text="Flagged Visits - Need Review",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        header.grid(row=0, column=0, sticky="w", padx=15, pady=12)
+
+        # Scrollable frame for flagged visits
+        self.review_scroll = ctk.CTkScrollableFrame(self.tab_review)
+        self.review_scroll.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        self.review_scroll.grid_columnconfigure(0, weight=1)
+
+        # Load flagged visits
+        self.refresh_review_list()
+
+    def refresh_review_list(self):
+        """Refresh the list of visits needing review."""
+        # Clear existing widgets
+        for widget in self.review_scroll.winfo_children():
+            widget.destroy()
+
+        flagged_visits = self.db.get_visits_needing_review()
+
+        if not flagged_visits:
+            no_flagged = ctk.CTkLabel(
+                self.review_scroll,
+                text="No visits flagged for review!\nAll data is clean.",
+                font=ctk.CTkFont(size=16),
+                text_color="green"
+            )
+            no_flagged.grid(row=0, column=0, pady=50)
+            return
+
+        # Show count
+        count_label = ctk.CTkLabel(
+            self.review_scroll,
+            text=f"{len(flagged_visits)} visits need review",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="orange"
+        )
+        count_label.grid(row=0, column=0, sticky="w", padx=10, pady=(0, 10))
+
+        # Create a card for each flagged visit
+        for idx, visit in enumerate(flagged_visits):
+            self.create_review_card(self.review_scroll, visit, idx + 1)
+
+    def create_review_card(self, parent, visit, row):
+        """Create a card for editing a flagged visit."""
+        card = ctk.CTkFrame(parent, border_width=2, border_color="orange")
+        card.grid(row=row, column=0, sticky="ew", padx=10, pady=8)
+        card.grid_columnconfigure(1, weight=1)
+
+        # Header with client name and date
+        formatted_date = self.format_date_mdy(visit['visit_date'])
+        header_label = ctk.CTkLabel(
+            card,
+            text=f"⚠ {visit['client_name']} - {formatted_date}",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="orange"
+        )
+        header_label.grid(row=0, column=0, columnspan=4, sticky="w", padx=12, pady=(10, 8))
+
+        # Editable fields
+        row_num = 1
+
+        # Date
+        date_label = ctk.CTkLabel(card, text="Date:", font=ctk.CTkFont(size=11))
+        date_label.grid(row=row_num, column=0, sticky="w", padx=12, pady=4)
+
+        date_entry = ctk.CTkEntry(card, width=150, font=ctk.CTkFont(size=11))
+        date_entry.insert(0, self.format_date_mdy(visit['visit_date']))
+        date_entry.grid(row=row_num, column=1, sticky="w", padx=8, pady=4)
+
+        # Start time
+        start_label = ctk.CTkLabel(card, text="Start:", font=ctk.CTkFont(size=11))
+        start_label.grid(row=row_num, column=2, sticky="w", padx=12, pady=4)
+
+        start_entry = ctk.CTkEntry(card, width=120, font=ctk.CTkFont(size=11))
+        start_entry.insert(0, self.format_time_12hr(visit['start_time']))
+        start_entry.grid(row=row_num, column=3, sticky="w", padx=8, pady=4)
+        row_num += 1
+
+        # End time and duration
+        end_label = ctk.CTkLabel(card, text="End:", font=ctk.CTkFont(size=11))
+        end_label.grid(row=row_num, column=0, sticky="w", padx=12, pady=4)
+
+        end_entry = ctk.CTkEntry(card, width=150, font=ctk.CTkFont(size=11))
+        end_entry.insert(0, self.format_time_12hr(visit['end_time']))
+        end_entry.grid(row=row_num, column=1, sticky="w", padx=8, pady=4)
+
+        duration_label = ctk.CTkLabel(
+            card,
+            text=f"Duration: {visit['duration_minutes']:.0f} min",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        duration_label.grid(row=row_num, column=2, columnspan=2, sticky="w", padx=12, pady=4)
+        row_num += 1
+
+        # Notes
+        if visit.get('notes'):
+            notes_label = ctk.CTkLabel(
+                card,
+                text=f"Notes: {visit['notes']}",
+                font=ctk.CTkFont(size=10),
+                text_color="gray",
+                wraplength=600
+            )
+            notes_label.grid(row=row_num, column=0, columnspan=4, sticky="w", padx=12, pady=4)
+            row_num += 1
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+        btn_frame.grid(row=row_num, column=0, columnspan=4, sticky="ew", padx=12, pady=(8, 10))
+
+        save_btn = ctk.CTkButton(
+            btn_frame,
+            text="Save & Mark Reviewed",
+            command=lambda: self.save_and_mark_reviewed(
+                visit['id'], date_entry, start_entry, end_entry
+            ),
+            font=ctk.CTkFont(size=11),
+            height=30,
+            fg_color="green"
+        )
+        save_btn.pack(side=tk.LEFT, padx=4)
+
+        delete_btn = ctk.CTkButton(
+            btn_frame,
+            text="Delete Visit",
+            command=lambda: self.delete_flagged_visit(visit['id']),
+            font=ctk.CTkFont(size=11),
+            height=30,
+            fg_color="red"
+        )
+        delete_btn.pack(side=tk.LEFT, padx=4)
+
+    def save_and_mark_reviewed(self, visit_id, date_entry, start_entry, end_entry):
+        """Save visit changes and mark as reviewed."""
+        try:
+            date_str = date_entry.get().strip()
+            start_str = start_entry.get().strip()
+            end_str = end_entry.get().strip()
+
+            # Convert date from MM/DD/YYYY to YYYY-MM-DD
+            try:
+                date_obj = datetime.strptime(date_str, '%m/%d/%Y')
+                db_date = date_obj.strftime('%Y-%m-%d')
+            except:
+                messagebox.showerror("Error", "Invalid date format. Use MM/DD/YYYY")
+                return
+
+            # Convert times from 12-hour to 24-hour
+            try:
+                for fmt in ['%I:%M %p', '%I:%M%p', '%H:%M']:
+                    try:
+                        start_obj = datetime.strptime(start_str, fmt)
+                        end_obj = datetime.strptime(end_str, fmt)
+                        db_start = start_obj.strftime('%H:%M')
+                        db_end = end_obj.strftime('%H:%M')
+                        break
+                    except:
+                        continue
+                else:
+                    raise ValueError()
+            except:
+                messagebox.showerror("Error", "Invalid time format. Use h:MM AM/PM")
+                return
+
+            # Calculate duration
+            start = datetime.strptime(db_start, '%H:%M')
+            end = datetime.strptime(db_end, '%H:%M')
+            duration = (end - start).total_seconds() / 60
+
+            if duration <= 0:
+                messagebox.showerror("Error", "End time must be after start time")
+                return
+
+            # Update visit
+            self.db.update_visit(
+                visit_id,
+                visit_date=db_date,
+                start_time=db_start,
+                end_time=db_end,
+                duration_minutes=duration,
+                needs_review=0
+            )
+
+            messagebox.showinfo("Success", "Visit updated and marked as reviewed!")
+            self.refresh_review_list()
+            self.refresh_dashboard()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to update visit: {str(e)}")
+
+    def delete_flagged_visit(self, visit_id):
+        """Delete a flagged visit."""
+        if messagebox.askyesno("Confirm Delete", "Delete this flagged visit?"):
+            self.db.delete_visit(visit_id)
+            messagebox.showinfo("Success", "Visit deleted")
+            self.refresh_review_list()
             self.refresh_dashboard()
 
     # ==================== MATERIALS TAB ====================
@@ -1256,45 +2329,75 @@ class LandscapingApp(ctk.CTk):
         """Open dialog to add a new material/service."""
         dialog = ctk.CTkToplevel(self)
         dialog.title("Add New Material/Service")
-        dialog.geometry("500x550")
+        dialog.geometry("500x600")
         dialog.transient(self)
         dialog.grab_set()
 
         # Center the dialog
         dialog.update_idletasks()
         x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
-        y = (dialog.winfo_screenheight() // 2) - (550 // 2)
-        dialog.geometry(f"500x550+{x}+{y}")
+        y = (dialog.winfo_screenheight() // 2) - (600 // 2)
+        dialog.geometry(f"500x600+{x}+{y}")
 
         header = ctk.CTkLabel(
             dialog,
             text="New Material/Service",
             font=ctk.CTkFont(size=18, weight="bold")
         )
-        header.pack(pady=20)
+        header.pack(pady=15)
+
+        # Scrollable frame for content
+        scroll_frame = ctk.CTkScrollableFrame(dialog, height=400)
+        scroll_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
 
         # Name
-        name_label = ctk.CTkLabel(dialog, text="Name *:", font=ctk.CTkFont(size=14))
+        name_label = ctk.CTkLabel(scroll_frame, text="Name *:", font=ctk.CTkFont(size=14))
         name_label.pack(pady=(10, 5))
-        name_entry = ctk.CTkEntry(dialog, placeholder_text="e.g., Mulch, Fertilizer", height=35)
+        name_entry = ctk.CTkEntry(scroll_frame, placeholder_text="e.g., Mulch, Fertilizer", height=35)
         name_entry.pack(pady=5, padx=20, fill="x")
 
         # Default cost
-        cost_label = ctk.CTkLabel(dialog, text="Default Cost ($) *:", font=ctk.CTkFont(size=14))
+        cost_label = ctk.CTkLabel(scroll_frame, text="Default Cost ($) *:", font=ctk.CTkFont(size=14))
         cost_label.pack(pady=(10, 5))
-        cost_entry = ctk.CTkEntry(dialog, placeholder_text="0.00", height=35)
+        cost_entry = ctk.CTkEntry(scroll_frame, placeholder_text="0.00", height=35)
         cost_entry.pack(pady=5, padx=20, fill="x")
 
-        # Unit
-        unit_label = ctk.CTkLabel(dialog, text="Unit:", font=ctk.CTkFont(size=14))
+        # Multiplier
+        unit_label = ctk.CTkLabel(scroll_frame, text="Multiplier:", font=ctk.CTkFont(size=14))
         unit_label.pack(pady=(10, 5))
-        unit_entry = ctk.CTkEntry(dialog, placeholder_text="e.g., bag, gallon, service", height=35)
+        unit_entry = ctk.CTkEntry(scroll_frame, placeholder_text="e.g., bag, gallon, service", height=35)
         unit_entry.pack(pady=5, padx=20, fill="x")
+
+        # Type selection (Material or Service)
+        type_label = ctk.CTkLabel(scroll_frame, text="Type *:", font=ctk.CTkFont(size=14))
+        type_label.pack(pady=(10, 5))
+
+        type_var = tk.StringVar(value="material")
+        type_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+        type_frame.pack(pady=5)
+
+        material_radio = ctk.CTkRadioButton(
+            type_frame,
+            text="Material (physical items like fertilizer, mulch)",
+            variable=type_var,
+            value="material",
+            font=ctk.CTkFont(size=12)
+        )
+        material_radio.pack(side="left", padx=10)
+
+        service_radio = ctk.CTkRadioButton(
+            type_frame,
+            text="Service (labor/services)",
+            variable=type_var,
+            value="service",
+            font=ctk.CTkFont(size=12)
+        )
+        service_radio.pack(side="left", padx=10)
 
         # Is global
         is_global_var = tk.BooleanVar(value=True)
         global_check = ctk.CTkCheckBox(
-            dialog,
+            scroll_frame,
             text="Global (same cost for all clients by default)",
             variable=is_global_var,
             font=ctk.CTkFont(size=13)
@@ -1302,9 +2405,9 @@ class LandscapingApp(ctk.CTk):
         global_check.pack(pady=15)
 
         # Description
-        desc_label = ctk.CTkLabel(dialog, text="Description:", font=ctk.CTkFont(size=14))
+        desc_label = ctk.CTkLabel(scroll_frame, text="Description:", font=ctk.CTkFont(size=14))
         desc_label.pack(pady=(10, 5))
-        desc_entry = ctk.CTkTextbox(dialog, height=80)
+        desc_entry = ctk.CTkTextbox(scroll_frame, height=80)
         desc_entry.pack(pady=5, padx=20, fill="x")
 
         def save_material():
@@ -1326,7 +2429,8 @@ class LandscapingApp(ctk.CTk):
                 default_cost=cost,
                 unit=unit_entry.get().strip(),
                 is_global=is_global_var.get(),
-                description=desc_entry.get("1.0", "end-1c")
+                description=desc_entry.get("1.0", "end-1c"),
+                material_type=type_var.get()
             )
 
             messagebox.showinfo("Success", "Material/service added successfully!")
@@ -1387,12 +2491,38 @@ class LandscapingApp(ctk.CTk):
         cost_entry.insert(0, str(material['default_cost']))
         cost_entry.pack(pady=5, padx=20, fill="x")
 
-        # Unit
-        unit_label = ctk.CTkLabel(dialog, text="Unit:", font=ctk.CTkFont(size=14))
+        # Multiplier
+        unit_label = ctk.CTkLabel(dialog, text="Multiplier:", font=ctk.CTkFont(size=14))
         unit_label.pack(pady=(10, 5))
         unit_entry = ctk.CTkEntry(dialog, height=35)
         unit_entry.insert(0, material['unit'] or "")
         unit_entry.pack(pady=5, padx=20, fill="x")
+
+        # Type selection (Material or Service)
+        type_label = ctk.CTkLabel(dialog, text="Type *:", font=ctk.CTkFont(size=14))
+        type_label.pack(pady=(10, 5))
+
+        type_var = tk.StringVar(value=material.get('material_type', 'material'))
+        type_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        type_frame.pack(pady=5)
+
+        material_radio = ctk.CTkRadioButton(
+            type_frame,
+            text="Material (physical items)",
+            variable=type_var,
+            value="material",
+            font=ctk.CTkFont(size=12)
+        )
+        material_radio.pack(side="left", padx=10)
+
+        service_radio = ctk.CTkRadioButton(
+            type_frame,
+            text="Service (labor/services)",
+            variable=type_var,
+            value="service",
+            font=ctk.CTkFont(size=12)
+        )
+        service_radio.pack(side="left", padx=10)
 
         # Is global
         is_global_var = tk.BooleanVar(value=bool(material['is_global']))
@@ -1431,7 +2561,8 @@ class LandscapingApp(ctk.CTk):
                 default_cost=cost,
                 unit=unit_entry.get().strip(),
                 is_global=1 if is_global_var.get() else 0,
-                description=desc_entry.get("1.0", "end-1c")
+                description=desc_entry.get("1.0", "end-1c"),
+                material_type=type_var.get()
             )
 
             messagebox.showinfo("Success", "Material/service updated successfully!")
@@ -1498,8 +2629,9 @@ class LandscapingApp(ctk.CTk):
         )
         template_btn.grid(row=3, column=0, sticky="ew", padx=50, pady=10)
 
-        ocr_state = "normal" if self.ocr_scanner.is_available() else "disabled"
-        ocr_text = "📷 Scan Paper Records" if self.ocr_scanner.is_available() else "📷 Scan Paper Records (Install pytesseract)"
+        ocr_scanner = self.get_ocr_scanner()
+        ocr_state = "normal" if ocr_scanner.is_available() else "disabled"
+        ocr_text = "📷 Scan Paper Records" if ocr_scanner.is_available() else "📷 Scan Paper Records (Install pytesseract)"
 
         ocr_btn = ctk.CTkButton(
             self.tab_import,
@@ -1703,6 +2835,17 @@ OCR Scanning Instructions (To be implemented):
             visit_frame.pack(fill="x", pady=8, padx=5)
             visit_frame.grid_columnconfigure(1, weight=1)
 
+            # Skip checkbox at the top
+            skip_var = tk.BooleanVar(value=False)
+            skip_check = ctk.CTkCheckBox(
+                visit_frame,
+                text="Skip this entry (don't import)",
+                variable=skip_var,
+                font=ctk.CTkFont(size=10),
+                text_color="gray"
+            )
+            skip_check.grid(row=0, column=0, columnspan=2, sticky="e", padx=8, pady=(6, 0))
+
             # Row number and client name
             header_text = f"Error #{idx+1} - {visit['client_name']}"
             header_label = ctk.CTkLabel(
@@ -1710,7 +2853,7 @@ OCR Scanning Instructions (To be implemented):
                 text=header_text,
                 font=ctk.CTkFont(size=12, weight="bold")
             )
-            header_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(8, 4))
+            header_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=8, pady=(4, 4))
 
             # Error message
             error_label = ctk.CTkLabel(
@@ -1720,26 +2863,20 @@ OCR Scanning Instructions (To be implemented):
                 text_color="red",
                 wraplength=850
             )
-            error_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 8))
+            error_label.grid(row=2, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 8))
 
             # Editable fields
-            row_num = 2
+            row_num = 3
 
             # Date field - format as MM/DD/YYYY
             date_label = ctk.CTkLabel(visit_frame, text="Date (MM/DD/YYYY):", font=ctk.CTkFont(size=11))
             date_label.grid(row=row_num, column=0, sticky="w", padx=8, pady=4)
 
-            # Format date for display
-            date_val = visit.get('date', '')
-            if date_val:
-                try:
-                    date_obj = datetime.strptime(str(date_val), '%Y-%m-%d')
-                    date_val = date_obj.strftime('%m/%d/%Y')
-                except:
-                    pass
+            # Format date for display using helper function
+            date_val = self.format_date_mdy(str(visit.get('date', '')))
 
             date_entry = ctk.CTkEntry(visit_frame, width=180, font=ctk.CTkFont(size=11))
-            date_entry.insert(0, str(date_val))
+            date_entry.insert(0, date_val)
             date_entry.grid(row=row_num, column=1, sticky="w", padx=8, pady=4)
             row_num += 1
 
@@ -1747,17 +2884,11 @@ OCR Scanning Instructions (To be implemented):
             start_label = ctk.CTkLabel(visit_frame, text="Start (h:MM AM/PM):", font=ctk.CTkFont(size=11))
             start_label.grid(row=row_num, column=0, sticky="w", padx=8, pady=4)
 
-            # Format time for display
-            start_val = visit.get('start_time', '')
-            if start_val:
-                try:
-                    time_obj = datetime.strptime(str(start_val), '%H:%M')
-                    start_val = time_obj.strftime('%-I:%M %p')
-                except:
-                    pass
+            # Format time for display using helper function
+            start_val = self.format_time_12hr(str(visit.get('start_time', '')))
 
             start_entry = ctk.CTkEntry(visit_frame, width=180, font=ctk.CTkFont(size=11))
-            start_entry.insert(0, str(start_val))
+            start_entry.insert(0, start_val)
             start_entry.grid(row=row_num, column=1, sticky="w", padx=8, pady=4)
             row_num += 1
 
@@ -1765,19 +2896,64 @@ OCR Scanning Instructions (To be implemented):
             end_label = ctk.CTkLabel(visit_frame, text="End (h:MM AM/PM):", font=ctk.CTkFont(size=11))
             end_label.grid(row=row_num, column=0, sticky="w", padx=8, pady=4)
 
-            # Format time for display
-            end_val = visit.get('end_time', '')
-            if end_val:
-                try:
-                    time_obj = datetime.strptime(str(end_val), '%H:%M')
-                    end_val = time_obj.strftime('%-I:%M %p')
-                except:
-                    pass
+            # Format time for display using helper function
+            end_val = self.format_time_12hr(str(visit.get('end_time', '')))
 
             end_entry = ctk.CTkEntry(visit_frame, width=180, font=ctk.CTkFont(size=11))
-            end_entry.insert(0, str(end_val))
+            end_entry.insert(0, end_val)
             end_entry.grid(row=row_num, column=1, sticky="w", padx=8, pady=4)
             row_num += 1
+
+            # Create validation function for this specific visit
+            def create_validator(frame, d_entry, s_entry, e_entry):
+                def validate(*args):
+                    """Validate the visit data and update border color."""
+                    date_str = d_entry.get().strip()
+                    start_str = s_entry.get().strip()
+                    end_str = e_entry.get().strip()
+
+                    # Validate date
+                    date_valid = False
+                    try:
+                        datetime.strptime(date_str, '%m/%d/%Y')
+                        date_valid = True
+                    except:
+                        try:
+                            datetime.strptime(date_str, '%Y-%m-%d')
+                            date_valid = True
+                        except:
+                            pass
+
+                    # Validate times
+                    times_valid = False
+                    if date_valid:
+                        try:
+                            for fmt in ['%I:%M %p', '%I:%M%p', '%H:%M']:
+                                try:
+                                    start_obj = datetime.strptime(start_str, fmt)
+                                    end_obj = datetime.strptime(end_str, fmt)
+                                    duration = (end_obj - start_obj).total_seconds() / 60
+                                    if duration > 0:
+                                        times_valid = True
+                                        break
+                                except:
+                                    continue
+                        except:
+                            pass
+
+                    # Update border color
+                    if date_valid and times_valid:
+                        frame.configure(border_color="green")
+                    else:
+                        frame.configure(border_color="red")
+
+                return validate
+
+            # Bind validation to field changes
+            validator = create_validator(visit_frame, date_entry, start_entry, end_entry)
+            date_entry.bind('<KeyRelease>', validator)
+            start_entry.bind('<KeyRelease>', validator)
+            end_entry.bind('<KeyRelease>', validator)
 
             # Store editable fields
             self.editable_visits.append({
@@ -1785,6 +2961,8 @@ OCR Scanning Instructions (To be implemented):
                 'date_entry': date_entry,
                 'start_entry': start_entry,
                 'end_entry': end_entry,
+                'skip_var': skip_var,
+                'frame': visit_frame,
                 'notes': visit.get('notes', ''),
                 'original_error': True
             })
@@ -1799,17 +2977,31 @@ OCR Scanning Instructions (To be implemented):
             )
             success_label.pack(pady=50)
 
+        # Option to import errors as flagged for review
+        if error_count > 0:
+            options_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+            options_frame.pack(fill="x", padx=20, pady=(10, 0))
+
+            self.import_errors_var = tk.BooleanVar(value=False)
+            import_errors_check = ctk.CTkCheckBox(
+                options_frame,
+                text=f"Import error visits anyway and flag for later review ({error_count} visits)",
+                variable=self.import_errors_var,
+                font=ctk.CTkFont(size=12)
+            )
+            import_errors_check.pack(anchor="w", pady=5)
+
         # Buttons
         btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=20, pady=(0, 20))
+        btn_frame.pack(fill="x", padx=20, pady=(10, 20))
 
         # Import button
         proceed_btn = ctk.CTkButton(
             btn_frame,
             text=f"Import Data ({len(preview_results.get('clients', []))} clients, {total_visits} visits)",
             command=lambda: self.confirm_and_import(dialog, preview_results),
-            font=ctk.CTkFont(size=16),
-            height=45,
+            font=ctk.CTkFont(size=14),
+            height=40,
             fg_color="green"
         )
         proceed_btn.pack(side=tk.LEFT, padx=5)
@@ -1818,8 +3010,8 @@ OCR Scanning Instructions (To be implemented):
             btn_frame,
             text="Cancel",
             command=dialog.destroy,
-            font=ctk.CTkFont(size=16),
-            height=45,
+            font=ctk.CTkFont(size=14),
+            height=40,
             fg_color="gray"
         )
         cancel_btn.pack(side=tk.LEFT, padx=5)
@@ -1829,8 +3021,14 @@ OCR Scanning Instructions (To be implemented):
         # Validate and collect edited visit data
         validated_visits = []
         validation_errors = []
+        skipped_count = 0
 
         for idx, visit_data in enumerate(self.editable_visits):
+            # Skip this visit if the skip checkbox is checked
+            if visit_data.get('skip_var') and visit_data['skip_var'].get():
+                skipped_count += 1
+                continue
+
             try:
                 date_str = visit_data['date_entry'].get().strip()
                 start_str = visit_data['start_entry'].get().strip()
@@ -1905,20 +3103,26 @@ OCR Scanning Instructions (To be implemented):
             if not visit.get('has_error'):
                 validated_visits.append(visit)
 
+        # Check if user wants to import errors as flagged
+        import_errors_as_review = getattr(self, 'import_errors_var', None)
+        import_errors_as_review = import_errors_as_review.get() if import_errors_as_review else False
+
+        # Build confirmation message
+        confirm_msg = f"This will import:\n"
+        confirm_msg += f"• {len(preview_results.get('clients', []))} clients\n"
+        confirm_msg += f"• {len(validated_visits)} visits\n"
+        if skipped_count > 0:
+            confirm_msg += f"• {skipped_count} visits skipped\n"
+        confirm_msg += f"\nContinue?"
+
         # Confirm import with corrected data
-        if messagebox.askyesno(
-            "Confirm Import",
-            f"This will import:\n"
-            f"• {len(preview_results.get('clients', []))} clients\n"
-            f"• {len(validated_visits)} visits\n\n"
-            f"Continue?"
-        ):
+        if messagebox.askyesno("Confirm Import", confirm_msg):
             dialog.destroy()
             # Update preview_results with validated visits
             preview_results['visits'] = validated_visits
-            self.perform_excel_import(preview_results)
+            self.perform_excel_import(preview_results, import_errors_as_review)
 
-    def perform_excel_import(self, preview_results):
+    def perform_excel_import(self, preview_results, import_errors_as_review=False):
         """Actually perform the import to the database."""
         # Show progress dialog
         progress_dialog = ctk.CTkToplevel(self)
@@ -1945,7 +3149,7 @@ OCR Scanning Instructions (To be implemented):
         self.update()
 
         # Perform import
-        results = self.excel_importer.execute_import(preview_results)
+        results = self.excel_importer.execute_import(preview_results, import_errors_as_review)
 
         progress_dialog.destroy()
 
@@ -1953,6 +3157,9 @@ OCR Scanning Instructions (To be implemented):
         msg = "Import Complete!\n\n"
         msg += f"Clients added: {results['clients_added']}\n"
         msg += f"Visits added: {results['visits_added']}\n"
+
+        if results.get('visits_flagged', 0) > 0:
+            msg += f"Visits flagged for review: {results['visits_flagged']}\n"
 
         if results.get('errors'):
             msg += f"\nErrors: {len(results['errors'])}"
@@ -1964,7 +3171,9 @@ OCR Scanning Instructions (To be implemented):
 
     def scan_paper_records(self):
         """Scan and import data from paper records."""
-        if not self.ocr_scanner.is_available():
+        ocr_scanner = self.get_ocr_scanner()
+
+        if not ocr_scanner.is_available():
             messagebox.showerror(
                 "OCR Not Available",
                 "OCR functionality requires pytesseract and tesseract-ocr to be installed.\n\n"
@@ -1989,12 +3198,12 @@ OCR Scanning Instructions (To be implemented):
 
         # Scan all images
         for file_path in file_paths:
-            text = self.ocr_scanner.scan_image(file_path)
+            text = ocr_scanner.scan_image(file_path)
             if text:
-                records = self.ocr_scanner.parse_visit_records(text)
+                records = ocr_scanner.parse_visit_records(text)
                 for record in records:
                     record['source_file'] = file_path
-                    self.ocr_scanner.validate_and_calculate_duration(record)
+                    ocr_scanner.validate_and_calculate_duration(record)
                 all_records.extend(records)
 
         if not all_records:
@@ -2199,7 +3408,12 @@ OCR Scanning Instructions (To be implemented):
         """Convert 24-hour time (HH:MM) to 12-hour format (h:MM AM/PM)."""
         try:
             time_obj = datetime.strptime(time_str, '%H:%M')
-            return time_obj.strftime('%-I:%M %p')  # %-I removes leading zero
+            # Use %I:%M %p and strip leading zero manually for cross-platform compatibility
+            formatted = time_obj.strftime('%I:%M %p')
+            # Remove leading zero from hour (e.g., "09:00 AM" -> "9:00 AM")
+            if formatted[0] == '0':
+                formatted = formatted[1:]
+            return formatted
         except:
             return time_str  # Return original if parsing fails
 
@@ -2211,12 +3425,197 @@ OCR Scanning Instructions (To be implemented):
         except:
             return date_str  # Return original if parsing fails
 
+    def show_settings_dialog(self):
+        """Show settings dialog to configure global application settings."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Settings")
+        dialog.geometry("500x550")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Header
+        header = ctk.CTkLabel(
+            dialog,
+            text="Application Settings",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        header.pack(pady=15, padx=20)
+
+        # Scrollable frame for settings
+        scroll_frame = ctk.CTkScrollableFrame(dialog, height=380)
+        scroll_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
+        # Hourly Rate Setting
+        hourly_frame = ctk.CTkFrame(scroll_frame)
+        hourly_frame.pack(pady=8, padx=10, fill="x")
+
+        hourly_label = ctk.CTkLabel(
+            hourly_frame,
+            text="Hourly Labor Rate (per person):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        hourly_label.pack(pady=(8, 3), padx=10, anchor="w")
+
+        hourly_entry = ctk.CTkEntry(
+            hourly_frame,
+            placeholder_text="e.g., 25.00",
+            height=30
+        )
+        hourly_entry.pack(pady=3, padx=10, fill="x")
+
+        # Load current value
+        current_rate = self.db.get_hourly_rate()
+        hourly_entry.insert(0, str(current_rate))
+
+        help_text = ctk.CTkLabel(
+            hourly_frame,
+            text="Labor cost = (visit time in hours) × 2 crew members × hourly rate",
+            font=ctk.CTkFont(size=9),
+            text_color="gray"
+        )
+        help_text.pack(pady=(0, 8), padx=10)
+
+        # PDF Export Path Setting
+        pdf_frame = ctk.CTkFrame(scroll_frame)
+        pdf_frame.pack(pady=8, padx=10, fill="x")
+
+        pdf_label = ctk.CTkLabel(
+            pdf_frame,
+            text="PDF Export Directory:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        pdf_label.pack(pady=(8, 3), padx=10, anchor="w")
+
+        pdf_path_frame = ctk.CTkFrame(pdf_frame, fg_color="transparent")
+        pdf_path_frame.pack(pady=3, padx=10, fill="x")
+
+        pdf_entry = ctk.CTkEntry(
+            pdf_path_frame,
+            placeholder_text="Select directory for PDF exports",
+            height=30
+        )
+        pdf_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+
+        # Load current value
+        current_pdf_path = self.db.get_setting('pdf_export_path', '')
+        if current_pdf_path:
+            pdf_entry.insert(0, current_pdf_path)
+
+        def browse_pdf_path():
+            path = filedialog.askdirectory(title="Select PDF Export Directory")
+            if path:
+                pdf_entry.delete(0, tk.END)
+                pdf_entry.insert(0, path)
+
+        browse_btn = ctk.CTkButton(
+            pdf_path_frame,
+            text="Browse",
+            command=browse_pdf_path,
+            width=80,
+            height=30,
+            font=ctk.CTkFont(size=10)
+        )
+        browse_btn.pack(side="right")
+
+        pdf_help = ctk.CTkLabel(
+            pdf_frame,
+            text="Directory where exported PDF reports will be saved",
+            font=ctk.CTkFont(size=9),
+            text_color="gray"
+        )
+        pdf_help.pack(pady=(0, 8), padx=10)
+
+        # Color Theme Setting
+        theme_frame = ctk.CTkFrame(scroll_frame)
+        theme_frame.pack(pady=8, padx=10, fill="x")
+
+        theme_label = ctk.CTkLabel(
+            theme_frame,
+            text="Color Theme:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        theme_label.pack(pady=(8, 3), padx=10, anchor="w")
+
+        current_theme = self.db.get_setting('color_theme', 'blue')
+        theme_var = tk.StringVar(value=current_theme)
+
+        theme_options = ["blue", "dark-blue", "green"]
+        theme_menu = ctk.CTkOptionMenu(
+            theme_frame,
+            variable=theme_var,
+            values=theme_options,
+            height=30,
+            font=ctk.CTkFont(size=11)
+        )
+        theme_menu.pack(pady=3, padx=10, fill="x")
+
+        theme_help = ctk.CTkLabel(
+            theme_frame,
+            text="Changes will apply after restarting the application",
+            font=ctk.CTkFont(size=9),
+            text_color="gray"
+        )
+        theme_help.pack(pady=(0, 8), padx=10)
+
+        def save_settings():
+            try:
+                # Validate and save hourly rate
+                new_rate = float(hourly_entry.get())
+                if new_rate <= 0:
+                    messagebox.showerror("Error", "Hourly rate must be greater than 0")
+                    return
+                self.db.set_hourly_rate(new_rate)
+
+                # Save PDF export path
+                pdf_path = pdf_entry.get().strip()
+                self.db.set_setting('pdf_export_path', pdf_path)
+
+                # Save color theme
+                new_theme = theme_var.get()
+                self.db.set_setting('color_theme', new_theme)
+
+                # Apply theme immediately
+                if new_theme != current_theme:
+                    ctk.set_default_color_theme(new_theme)
+                    messagebox.showinfo("Success", "Settings saved! Color theme will fully apply after restart.")
+                else:
+                    messagebox.showinfo("Success", "Settings saved successfully!")
+
+                self.refresh_dashboard()  # Refresh dashboard to show updated calculations
+                dialog.destroy()
+            except ValueError:
+                messagebox.showerror("Error", "Hourly rate must be a valid number")
+
+        # Buttons
+        button_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        button_frame.pack(pady=10, padx=20, fill="x")
+
+        save_btn = ctk.CTkButton(
+            button_frame,
+            text="Save",
+            command=save_settings,
+            font=ctk.CTkFont(size=11),
+            height=32
+        )
+        save_btn.pack(side="left", padx=(0, 8), expand=True, fill="x")
+
+        cancel_btn = ctk.CTkButton(
+            button_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            font=ctk.CTkFont(size=11),
+            height=32,
+            fg_color="gray"
+        )
+        cancel_btn.pack(side="left", expand=True, fill="x")
+
     def refresh_all(self):
         """Refresh all data displays."""
         self.refresh_dashboard()
         self.refresh_clients_list()
         self.refresh_materials_list()
         self.refresh_visit_client_dropdown()
+        self.refresh_review_list()
         messagebox.showinfo("Refreshed", "All data refreshed successfully!")
 
     def on_closing(self):
