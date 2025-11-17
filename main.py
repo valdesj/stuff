@@ -837,6 +837,64 @@ class LandscapingApp(ctk.CTk):
         story.append(visit_table)
         story.append(Spacer(1, 0.2*inch))
 
+        # Detailed Visit History for Working Year
+        working_year = self.db.get_setting('working_year', str(datetime.now().year))
+        story.append(Paragraph(f"Detailed Visit History ({working_year})", heading_style))
+
+        # Get all visits for this client in the working year
+        all_visits = self.db.get_client_visits(stats['client_id'])
+        year_visits = [v for v in all_visits if v['visit_date'].startswith(working_year)]
+
+        if year_visits:
+            # Sort by date
+            year_visits.sort(key=lambda x: x['visit_date'])
+
+            story.append(Paragraph(
+                f"Complete record of all {len(year_visits)} visits during {working_year}:",
+                normal_style
+            ))
+            story.append(Spacer(1, 0.1*inch))
+
+            # Create visit history table
+            visit_history_data = [['Date', 'Day', 'Start', 'End', 'Duration']]
+
+            for visit in year_visits:
+                date_obj = datetime.strptime(visit['visit_date'], '%Y-%m-%d')
+                date_str = date_obj.strftime('%m/%d/%Y')
+                day_str = date_obj.strftime('%A')[:3]  # Mon, Tue, etc.
+                start_obj = datetime.strptime(visit['start_time'], '%H:%M')
+                end_obj = datetime.strptime(visit['end_time'], '%H:%M')
+                start_str = start_obj.strftime('%I:%M %p').lstrip('0')
+                end_str = end_obj.strftime('%I:%M %p').lstrip('0')
+                duration_str = f"{visit['duration_minutes']:.0f} min"
+
+                visit_history_data.append([date_str, day_str, start_str, end_str, duration_str])
+
+            visit_history_table = Table(visit_history_data, colWidths=[1.1*inch, 0.6*inch, 0.9*inch, 0.9*inch, 0.8*inch])
+            visit_history_table.setStyle(TableStyle([
+                ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 9),
+                ('FONT', (0, 1), (-1, -1), 'Helvetica', 8),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0078D4')),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                # Alternating row colors for readability
+                *[('BACKGROUND', (0, i), (-1, i), colors.HexColor('#F5F5F5'))
+                  for i in range(1, len(visit_history_data), 2)]
+            ]))
+
+            story.append(visit_history_table)
+            story.append(Spacer(1, 0.3*inch))
+        else:
+            story.append(Paragraph(
+                f"No visits recorded for {working_year}.",
+                normal_style
+            ))
+            story.append(Spacer(1, 0.2*inch))
+
         # Cost Breakdown
         story.append(Paragraph("Annual Cost Breakdown", heading_style))
         story.append(Paragraph(
@@ -4182,7 +4240,7 @@ OCR Scanning Instructions (To be implemented):
         """Show settings dialog to configure global application settings."""
         dialog = ctk.CTkToplevel(self)
         dialog.title("Settings")
-        dialog.geometry("500x550")
+        dialog.geometry("500x650")
         dialog.transient(self)
         dialog.grab_set()
 
@@ -4278,6 +4336,41 @@ OCR Scanning Instructions (To be implemented):
         )
         pdf_help.pack(pady=(0, 8), padx=10)
 
+        # Working Year Setting
+        year_frame = ctk.CTkFrame(scroll_frame)
+        year_frame.pack(pady=8, padx=10, fill="x")
+
+        year_label = ctk.CTkLabel(
+            year_frame,
+            text="Working Year:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        year_label.pack(pady=(8, 3), padx=10, anchor="w")
+
+        current_working_year = self.db.get_setting('working_year', str(datetime.now().year))
+        year_var = tk.StringVar(value=current_working_year)
+
+        # Generate year options (current year and 5 years back)
+        current_year = datetime.now().year
+        year_options = [str(current_year - i) for i in range(6)]
+
+        year_menu = ctk.CTkOptionMenu(
+            year_frame,
+            variable=year_var,
+            values=year_options,
+            height=30,
+            font=ctk.CTkFont(size=11)
+        )
+        year_menu.pack(pady=3, padx=10, fill="x")
+
+        year_help = ctk.CTkLabel(
+            year_frame,
+            text="Select which year's data to view and export in PDFs",
+            font=ctk.CTkFont(size=9),
+            text_color="gray"
+        )
+        year_help.pack(pady=(0, 8), padx=10)
+
         # Color Theme Setting
         theme_frame = ctk.CTkFrame(scroll_frame)
         theme_frame.pack(pady=8, padx=10, fill="x")
@@ -4322,6 +4415,11 @@ OCR Scanning Instructions (To be implemented):
                 # Save PDF export path
                 pdf_path = pdf_entry.get().strip()
                 self.db.set_setting('pdf_export_path', pdf_path)
+
+                # Save working year
+                new_year = year_var.get()
+                old_year = self.db.get_setting('working_year', str(datetime.now().year))
+                self.db.set_setting('working_year', new_year)
 
                 # Save color theme
                 new_theme = theme_var.get()
