@@ -2145,17 +2145,38 @@ class LandscapingApp(ctk.CTk):
         )
         date_label.pack(side=tk.LEFT, padx=10, pady=15)
 
-        # Calendar picker (DateEntry widget)
+        # Calendar picker (DateEntry widget) - styled for modern dark theme
         self.daily_date_picker = DateEntry(
             date_frame,
-            width=18,
-            background='darkblue',
+            width=22,
+            background='#3B8ED0',  # Modern blue for dropdown button
             foreground='white',
             borderwidth=2,
-            font=('Arial', 12),
-            date_pattern='mm/dd/yyyy'
+            font=('Segoe UI', 14, 'bold'),
+            date_pattern='mm/dd/yyyy',
+            # Calendar popup styling
+            headersbackground='#1F6AA5',  # Dark blue header
+            headersforeground='white',
+            selectbackground='#3B8ED0',  # Selected date color
+            selectforeground='white',
+            normalbackground='#2B2B2B',  # Dark background for dates
+            normalforeground='white',
+            weekendbackground='#1A1A1A',  # Slightly darker for weekends
+            weekendforeground='#7B9EB5',  # Lighter blue for weekend text
+            othermonthforeground='#666666',  # Grayed out other month dates
+            othermonthweforeground='#666666',
+            othermonthwebackground='#1A1A1A',
+            disabledbackground='#1A1A1A',
+            disabledforeground='#444444'
         )
         self.daily_date_picker.pack(side=tk.LEFT, padx=10, pady=15)
+
+        # Make the calendar popup larger
+        self.daily_date_picker._calendar.configure(
+            font=('Segoe UI', 12),
+            borderwidth=2,
+            relief='solid'
+        )
 
         # Show button
         show_btn = ctk.CTkButton(
