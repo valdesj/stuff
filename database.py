@@ -116,6 +116,13 @@ class Database:
         except sqlite3.OperationalError:
             # Column already exists
             pass
+
+        # Add bill_to column to clients table for client groups (migration)
+        try:
+            cursor.execute("ALTER TABLE clients ADD COLUMN bill_to TEXT")
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
         # Materials used during visits
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS visit_materials (
@@ -145,19 +152,19 @@ class Database:
     # ==================== CLIENT OPERATIONS ====================
 
     def add_client(self, name: str, monthly_charge: float, email: str = "",
-                   phone: str = "", address: str = "", notes: str = "") -> int:
+                   phone: str = "", address: str = "", notes: str = "", bill_to: str = "") -> int:
         """Add a new client and return their ID."""
         cursor = self.connection.cursor()
         cursor.execute("""
-            INSERT INTO clients (name, email, phone, address, monthly_charge, notes)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (name, email, phone, address, monthly_charge, notes))
+            INSERT INTO clients (name, email, phone, address, monthly_charge, notes, bill_to)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (name, email, phone, address, monthly_charge, notes, bill_to))
         self.connection.commit()
         return cursor.lastrowid
 
     def update_client(self, client_id: int, **kwargs):
         """Update client information."""
-        allowed_fields = ['name', 'email', 'phone', 'address', 'monthly_charge', 'notes']
+        allowed_fields = ['name', 'email', 'phone', 'address', 'monthly_charge', 'notes', 'bill_to']
         updates = []
         values = []
 
@@ -249,6 +256,28 @@ class Database:
         """Hard delete - permanently remove client and all related data."""
         self.connection.execute("DELETE FROM clients WHERE id = ?", (client_id,))
         self.connection.commit()
+
+    def get_all_client_groups(self) -> List[Dict]:
+        """Get all unique bill_to groups with client counts."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT bill_to, COUNT(*) as client_count
+            FROM clients
+            WHERE is_active = 1 AND bill_to IS NOT NULL AND bill_to != ''
+            GROUP BY bill_to
+            ORDER BY bill_to
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_clients_in_group(self, bill_to: str) -> List[Dict]:
+        """Get all clients in a specific bill_to group."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT * FROM clients
+            WHERE is_active = 1 AND bill_to = ?
+            ORDER BY name
+        """, (bill_to,))
+        return [dict(row) for row in cursor.fetchall()]
 
     # ==================== MATERIAL OPERATIONS ====================
 

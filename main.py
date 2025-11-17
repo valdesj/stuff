@@ -1085,45 +1085,51 @@ class LandscapingApp(ctk.CTk):
         """Initialize the clients management tab."""
         self.tab_clients.grid_columnconfigure(0, weight=1)
         self.tab_clients.grid_columnconfigure(1, weight=2)
-        self.tab_clients.grid_rowconfigure(1, weight=1)
+        self.tab_clients.grid_rowconfigure(0, weight=1)
 
-        # Left side - Client list
+        # Left side - Client list with sub-tabs
         left_frame = ctk.CTkFrame(self.tab_clients)
-        left_frame.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(10, 5), pady=10)
+        left_frame.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=10)
         left_frame.grid_columnconfigure(0, weight=1)
-        left_frame.grid_rowconfigure(2, weight=1)
+        left_frame.grid_rowconfigure(0, weight=1)
 
-        list_header = ctk.CTkLabel(
-            left_frame,
-            text="Client List",
-            font=ctk.CTkFont(size=14, weight="bold")
-        )
-        list_header.grid(row=0, column=0, sticky="w", padx=12, pady=(12, 4))
+        # Create sub-tabs for Active, Inactive, and Groups
+        self.clients_tabview = ctk.CTkTabview(left_frame)
+        self.clients_tabview.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
-        # Show inactive clients checkbox
-        self.show_inactive_var = tk.BooleanVar(value=False)
-        inactive_check = ctk.CTkCheckBox(
-            left_frame,
-            text="Show Inactive Clients",
-            variable=self.show_inactive_var,
-            command=self.refresh_clients_list,
-            font=ctk.CTkFont(size=11)
-        )
-        inactive_check.grid(row=1, column=0, sticky="w", padx=12, pady=3)
+        # Create the three sub-tabs
+        self.clients_active_tab = self.clients_tabview.add("Active")
+        self.clients_inactive_tab = self.clients_tabview.add("Inactive")
+        self.clients_groups_tab = self.clients_tabview.add("Groups")
 
-        # Client list with button-style items
-        self.clients_scroll_frame = ctk.CTkScrollableFrame(left_frame)
-        self.clients_scroll_frame.grid(row=2, column=0, sticky="nsew", padx=8, pady=(3, 8))
-        self.clients_scroll_frame.grid_columnconfigure(0, weight=1)
+        # Configure each sub-tab
+        for tab in [self.clients_active_tab, self.clients_inactive_tab, self.clients_groups_tab]:
+            tab.grid_columnconfigure(0, weight=1)
+            tab.grid_rowconfigure(0, weight=1)
 
-        # Increase scroll speed
-        self.clients_scroll_frame._parent_canvas.configure(yscrollincrement=20)
+        # Active clients scrollable frame
+        self.clients_active_scroll = ctk.CTkScrollableFrame(self.clients_active_tab)
+        self.clients_active_scroll.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        self.clients_active_scroll.grid_columnconfigure(0, weight=1)
+        self.clients_active_scroll._parent_canvas.configure(yscrollincrement=20)
+
+        # Inactive clients scrollable frame
+        self.clients_inactive_scroll = ctk.CTkScrollableFrame(self.clients_inactive_tab)
+        self.clients_inactive_scroll.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        self.clients_inactive_scroll.grid_columnconfigure(0, weight=1)
+        self.clients_inactive_scroll._parent_canvas.configure(yscrollincrement=20)
+
+        # Groups scrollable frame
+        self.clients_groups_scroll = ctk.CTkScrollableFrame(self.clients_groups_tab)
+        self.clients_groups_scroll.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        self.clients_groups_scroll.grid_columnconfigure(0, weight=1)
+        self.clients_groups_scroll._parent_canvas.configure(yscrollincrement=20)
 
         # Track selected client button
         self.selected_client_button = None
         self.client_buttons = []
 
-        # Add client button
+        # Add client button at bottom of left frame
         add_btn = ctk.CTkButton(
             left_frame,
             text="+ Add New Client",
@@ -1131,7 +1137,7 @@ class LandscapingApp(ctk.CTk):
             font=ctk.CTkFont(size=12),
             height=35
         )
-        add_btn.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 12))
+        add_btn.grid(row=1, column=0, sticky="ew", padx=12, pady=(5, 12))
 
         # Right side - Client details and materials
         right_frame = ctk.CTkFrame(self.tab_clients)
@@ -1168,48 +1174,153 @@ class LandscapingApp(ctk.CTk):
         placeholder.grid(row=0, column=0, pady=50)
 
     def refresh_clients_list(self):
-        """Refresh the clients list with button-style items."""
-        # Clear existing buttons
-        for widget in self.clients_scroll_frame.winfo_children():
+        """Refresh all client sub-tabs with button-style items."""
+        # Clear all sub-tab scrollable frames
+        for widget in self.clients_active_scroll.winfo_children():
+            widget.destroy()
+        for widget in self.clients_inactive_scroll.winfo_children():
+            widget.destroy()
+        for widget in self.clients_groups_scroll.winfo_children():
             widget.destroy()
 
         self.client_buttons = []
         self.selected_client_button = None
 
-        active_only = not self.show_inactive_var.get()
-        clients = self.db.get_all_clients(active_only=active_only)
+        # Get active and inactive clients
+        active_clients = self.db.get_all_clients(active_only=True)
+        inactive_clients = self.db.get_all_clients(active_only=False)
+        inactive_clients = [c for c in inactive_clients if not c['is_active']]
 
-        # Store client IDs for reference
-        self.client_ids = [c['id'] for c in clients]
+        # Populate Active tab
+        for idx, client in enumerate(active_clients):
+            self.create_client_button(self.clients_active_scroll, client, idx)
 
-        # Create button for each client
-        for idx, client in enumerate(clients):
-            display_name = client['name']
-            if not client['is_active']:
-                display_name += " (Inactive)"
-
-            def create_click_handler(client_id, button):
-                def handler():
-                    self.on_client_button_click(client_id, button)
-                return handler
-
-            btn = ctk.CTkButton(
-                self.clients_scroll_frame,
-                text=display_name,
-                font=ctk.CTkFont(size=17),
-                height=51,
-                corner_radius=8,
-                fg_color="#3a3a3a",
-                hover_color="#4a4a4a",
-                text_color="white",
-                anchor="w",
-                border_width=0
+        # Populate Inactive tab
+        if inactive_clients:
+            for idx, client in enumerate(inactive_clients):
+                self.create_client_button(self.clients_inactive_scroll, client, idx)
+        else:
+            no_inactive = ctk.CTkLabel(
+                self.clients_inactive_scroll,
+                text="No inactive clients",
+                font=ctk.CTkFont(size=14),
+                text_color="gray"
             )
-            btn.grid(row=idx, column=0, sticky="ew", padx=5, pady=4)
+            no_inactive.grid(row=0, column=0, pady=50)
 
-            # Store reference and set click handler
-            self.client_buttons.append(btn)
-            btn.configure(command=create_click_handler(client['id'], btn))
+        # Populate Groups tab
+        self.refresh_client_groups()
+
+    def create_client_button(self, parent, client, idx):
+        """Create a client button in the specified parent frame."""
+        def create_click_handler(client_id, button):
+            def handler():
+                self.on_client_button_click(client_id, button)
+            return handler
+
+        btn = ctk.CTkButton(
+            parent,
+            text=client['name'],
+            font=ctk.CTkFont(size=17),
+            height=51,
+            corner_radius=8,
+            fg_color="#3a3a3a",
+            hover_color="#4a4a4a",
+            text_color="white",
+            anchor="w",
+            border_width=0
+        )
+        btn.grid(row=idx, column=0, sticky="ew", padx=5, pady=4)
+
+        # Store reference and set click handler
+        self.client_buttons.append(btn)
+        btn.configure(command=create_click_handler(client['id'], btn))
+
+    def refresh_client_groups(self):
+        """Refresh the client groups display."""
+        # Clear groups scroll frame
+        for widget in self.clients_groups_scroll.winfo_children():
+            widget.destroy()
+
+        groups = self.db.get_all_client_groups()
+
+        if not groups:
+            no_groups = ctk.CTkLabel(
+                self.clients_groups_scroll,
+                text="No client groups yet\nAdd a 'Bill To' name to clients to create groups",
+                font=ctk.CTkFont(size=14),
+                text_color="gray"
+            )
+            no_groups.grid(row=0, column=0, pady=50)
+            return
+
+        # Create expandable group cards
+        for idx, group in enumerate(groups):
+            self.create_group_card(self.clients_groups_scroll, group, idx)
+
+    def create_group_card(self, parent, group, row):
+        """Create a card for a client group."""
+        card = ctk.CTkFrame(parent, border_width=2, border_color="#4a4a4a")
+        card.grid(row=row, column=0, sticky="ew", padx=5, pady=8)
+        card.grid_columnconfigure(0, weight=1)
+
+        # Header with group name and client count
+        header = ctk.CTkLabel(
+            card,
+            text=f"📋 {group['bill_to']} ({group['client_count']} properties)",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            anchor="w"
+        )
+        header.grid(row=0, column=0, sticky="ew", padx=12, pady=10)
+
+        # Expand button
+        expand_btn = ctk.CTkButton(
+            card,
+            text="View Properties ▼",
+            command=lambda: self.toggle_group_expansion(group['bill_to'], card),
+            font=ctk.CTkFont(size=11),
+            height=30,
+            fg_color="#5FA777"
+        )
+        expand_btn.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 10))
+
+    def toggle_group_expansion(self, bill_to, card):
+        """Toggle expansion of a client group to show/hide clients."""
+        # Check if already expanded
+        if len(card.winfo_children()) > 2:
+            # Collapse - remove client list
+            for widget in card.winfo_children()[2:]:
+                widget.destroy()
+            # Update button
+            card.winfo_children()[1].configure(text="View Properties ▼")
+        else:
+            # Expand - show clients
+            clients = self.db.get_clients_in_group(bill_to)
+
+            # Update button
+            card.winfo_children()[1].configure(text="Hide Properties ▲")
+
+            # Add client buttons
+            for idx, client in enumerate(clients):
+                def create_click_handler(client_id):
+                    def handler():
+                        # Navigate to client in Active tab
+                        self.clients_tabview.set("Active")
+                        self.refresh_clients_list()
+                        self.show_client_details(client_id)
+                    return handler
+
+                btn = ctk.CTkButton(
+                    card,
+                    text=f"  • {client['name']}",
+                    command=create_click_handler(client['id']),
+                    font=ctk.CTkFont(size=13),
+                    height=35,
+                    fg_color="transparent",
+                    hover_color="#3a3a3a",
+                    anchor="w"
+                )
+                btn.grid(row=idx + 2, column=0, sticky="ew", padx=20, pady=2)
 
     def on_client_button_click(self, client_id, button):
         """Handle client button click."""
@@ -1247,6 +1358,7 @@ class LandscapingApp(ctk.CTk):
         # Client information form
         fields = [
             ("Name:", "name"),
+            ("Bill To:", "bill_to"),
             ("Email:", "email"),
             ("Phone:", "phone"),
             ("Address:", "address"),
@@ -1793,6 +1905,7 @@ class LandscapingApp(ctk.CTk):
 
         fields = [
             ("Name *:", "name"),
+            ("Bill To:", "bill_to"),
             ("Email:", "email"),
             ("Phone:", "phone"),
             ("Address:", "address"),
@@ -1848,7 +1961,8 @@ class LandscapingApp(ctk.CTk):
                 phone=entries['phone'].get().strip(),
                 address=entries['address'].get().strip(),
                 monthly_charge=monthly_charge,
-                notes=notes_text
+                notes=notes_text,
+                bill_to=entries['bill_to'].get().strip()
             )
 
             messagebox.showinfo("Success", f"Client '{name}' added successfully!")
