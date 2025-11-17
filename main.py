@@ -2145,37 +2145,46 @@ class LandscapingApp(ctk.CTk):
         )
         date_label.pack(side=tk.LEFT, padx=10, pady=15)
 
-        # Calendar picker (DateEntry widget) - styled for modern dark theme
+        # Calendar picker styled like Windows taskbar calendar
         self.daily_date_picker = DateEntry(
             date_frame,
-            width=22,
-            background='#3B8ED0',  # Modern blue for dropdown button
+            width=24,
+            background='#0078D4',  # Windows blue
             foreground='white',
-            borderwidth=2,
-            font=('Segoe UI', 14, 'bold'),
+            borderwidth=0,
+            font=('Segoe UI', 15),
             date_pattern='mm/dd/yyyy',
-            # Calendar popup styling
-            headersbackground='#1F6AA5',  # Dark blue header
+            # Calendar popup styling - Windows style
+            headersbackground='#1F1F1F',  # Dark header like Windows
             headersforeground='white',
-            selectbackground='#3B8ED0',  # Selected date color
+            selectbackground='#0078D4',  # Windows blue for selected
             selectforeground='white',
-            normalbackground='#2B2B2B',  # Dark background for dates
+            normalbackground='#2D2D2D',  # Clean dark background
             normalforeground='white',
-            weekendbackground='#1A1A1A',  # Slightly darker for weekends
-            weekendforeground='#7B9EB5',  # Lighter blue for weekend text
-            othermonthforeground='#666666',  # Grayed out other month dates
-            othermonthweforeground='#666666',
-            othermonthwebackground='#1A1A1A',
-            disabledbackground='#1A1A1A',
-            disabledforeground='#444444'
+            weekendbackground='#2D2D2D',  # Same as weekdays for clean look
+            weekendforeground='white',
+            othermonthforeground='#686868',  # Subtle gray for other months
+            othermonthweforeground='#686868',
+            othermonthwebackground='#2D2D2D',
+            disabledbackground='#2D2D2D',
+            disabledforeground='#404040',
+            bordercolor='#3F3F3F',  # Subtle border
+            cursor='hand2'
         )
         self.daily_date_picker.pack(side=tk.LEFT, padx=10, pady=15)
 
-        # Make the calendar popup larger
+        # Style the calendar popup to match Windows - larger and cleaner
         self.daily_date_picker._calendar.configure(
-            font=('Segoe UI', 12),
-            borderwidth=2
+            font=('Segoe UI', 16),  # Larger font like Windows
+            borderwidth=1
         )
+
+        # Adjust calendar popup window styling
+        try:
+            # Make the popup window larger with more padding
+            self.daily_date_picker._top_cal.configure(bg='#2D2D2D')
+        except:
+            pass  # Window might not exist yet
 
         # Show button
         show_btn = ctk.CTkButton(
