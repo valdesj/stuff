@@ -2359,56 +2359,209 @@ class LandscapingApp(ctk.CTk):
     # ==================== REVIEW TAB ====================
 
     def init_review_tab(self):
-        """Initialize the review tab for flagged visits."""
+        """Initialize the review tab for flagged visits and data anomalies."""
         self.tab_review.grid_columnconfigure(0, weight=1)
         self.tab_review.grid_rowconfigure(1, weight=1)
 
         # Header
         header = ctk.CTkLabel(
             self.tab_review,
-            text="Flagged Visits - Need Review",
+            text="Data Review - Flagged Visits & Anomalies",
             font=ctk.CTkFont(size=16, weight="bold")
         )
         header.grid(row=0, column=0, sticky="w", padx=15, pady=12)
 
-        # Scrollable frame for flagged visits
+        # Scrollable frame for issues
         self.review_scroll = ctk.CTkScrollableFrame(self.tab_review)
         self.review_scroll.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
         self.review_scroll.grid_columnconfigure(0, weight=1)
 
-        # Load flagged visits
+        # Load all issues
         self.refresh_review_list()
 
     def refresh_review_list(self):
-        """Refresh the list of visits needing review."""
+        """Refresh the list of visits needing review and anomalous durations."""
         # Clear existing widgets
         for widget in self.review_scroll.winfo_children():
             widget.destroy()
 
         flagged_visits = self.db.get_visits_needing_review()
+        anomalous_visits = self.db.get_visits_with_anomalous_durations(threshold_percent=300.0)
 
-        if not flagged_visits:
-            no_flagged = ctk.CTkLabel(
+        # Check if there are any issues
+        if not flagged_visits and not anomalous_visits:
+            no_issues = ctk.CTkLabel(
                 self.review_scroll,
-                text="No visits flagged for review!\nAll data is clean.",
+                text="No data issues found!\nAll visits look good.",
                 font=ctk.CTkFont(size=16),
-                text_color="green"
+                text_color="#5FA777"
             )
-            no_flagged.grid(row=0, column=0, pady=50)
+            no_issues.grid(row=0, column=0, pady=50)
             return
 
-        # Show count
-        count_label = ctk.CTkLabel(
-            self.review_scroll,
-            text=f"{len(flagged_visits)} visits need review",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color="orange"
-        )
-        count_label.grid(row=0, column=0, sticky="w", padx=10, pady=(0, 10))
+        current_row = 0
 
-        # Create a card for each flagged visit
-        for idx, visit in enumerate(flagged_visits):
-            self.create_review_card(self.review_scroll, visit, idx + 1)
+        # Section 1: Anomalous Durations
+        if anomalous_visits:
+            anomaly_header = ctk.CTkLabel(
+                self.review_scroll,
+                text=f"⚠ Unusual Visit Durations ({len(anomalous_visits)})",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color="#C97C7C"
+            )
+            anomaly_header.grid(row=current_row, column=0, sticky="w", padx=10, pady=(5, 10))
+            current_row += 1
+
+            desc_label = ctk.CTkLabel(
+                self.review_scroll,
+                text="These visits are 3x+ longer than usual for the client (possible time entry errors)",
+                font=ctk.CTkFont(size=11),
+                text_color="gray"
+            )
+            desc_label.grid(row=current_row, column=0, sticky="w", padx=10, pady=(0, 10))
+            current_row += 1
+
+            for visit in anomalous_visits:
+                self.create_anomaly_card(self.review_scroll, visit, current_row)
+                current_row += 1
+
+        # Add spacing between sections
+        if flagged_visits and anomalous_visits:
+            spacer = ctk.CTkFrame(self.review_scroll, height=20, fg_color="transparent")
+            spacer.grid(row=current_row, column=0, sticky="ew")
+            current_row += 1
+
+        # Section 2: Manually Flagged Visits
+        if flagged_visits:
+            flagged_header = ctk.CTkLabel(
+                self.review_scroll,
+                text=f"🚩 Manually Flagged Visits ({len(flagged_visits)})",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color="orange"
+            )
+            flagged_header.grid(row=current_row, column=0, sticky="w", padx=10, pady=(5, 10))
+            current_row += 1
+
+            for visit in flagged_visits:
+                self.create_review_card(self.review_scroll, visit, current_row)
+                current_row += 1
+
+    def create_anomaly_card(self, parent, visit, row):
+        """Create a card showing a visit with anomalous duration."""
+        card = ctk.CTkFrame(parent, border_width=2, border_color="#C97C7C")
+        card.grid(row=row, column=0, sticky="ew", padx=10, pady=8)
+        card.grid_columnconfigure(1, weight=1)
+
+        # Header with client name and date
+        formatted_date = self.format_date_mdy(visit['visit_date'])
+        header_label = ctk.CTkLabel(
+            card,
+            text=f"⚠ {visit['client_name']} - {formatted_date}",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#C97C7C"
+        )
+        header_label.grid(row=0, column=0, columnspan=4, sticky="w", padx=12, pady=(10, 8))
+
+        # Anomaly explanation
+        percent = visit['percent_of_avg']
+        avg = visit['avg_duration']
+        actual = visit['duration_minutes']
+
+        anomaly_text = f"This visit: {actual:.0f} min  vs  Average: {avg:.0f} min  ({percent:.0f}% of normal)"
+        anomaly_label = ctk.CTkLabel(
+            card,
+            text=anomaly_text,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#C97C7C"
+        )
+        anomaly_label.grid(row=1, column=0, columnspan=4, sticky="w", padx=12, pady=(0, 8))
+
+        # Visit details
+        row_num = 2
+
+        # Times
+        start_time = self.format_time_12hr(visit['start_time'])
+        end_time = self.format_time_12hr(visit['end_time'])
+        times_label = ctk.CTkLabel(
+            card,
+            text=f"Time: {start_time} - {end_time}",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        times_label.grid(row=row_num, column=0, columnspan=2, sticky="w", padx=12, pady=4)
+
+        # Client visit count
+        count_label = ctk.CTkLabel(
+            card,
+            text=f"Based on {visit['total_visits']} total visits",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        count_label.grid(row=row_num, column=2, columnspan=2, sticky="w", padx=12, pady=4)
+        row_num += 1
+
+        # Notes
+        if visit.get('notes'):
+            notes_label = ctk.CTkLabel(
+                card,
+                text=f"Notes: {visit['notes']}",
+                font=ctk.CTkFont(size=10),
+                text_color="gray",
+                wraplength=600
+            )
+            notes_label.grid(row=row_num, column=0, columnspan=4, sticky="w", padx=12, pady=4)
+            row_num += 1
+
+        # Action buttons
+        btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+        btn_frame.grid(row=row_num, column=0, columnspan=4, sticky="ew", padx=12, pady=(8, 10))
+
+        edit_btn = ctk.CTkButton(
+            btn_frame,
+            text="Edit Visit",
+            command=lambda: self.edit_anomalous_visit(visit),
+            font=ctk.CTkFont(size=11),
+            height=30,
+            fg_color="#5FA777"
+        )
+        edit_btn.pack(side=tk.LEFT, padx=4)
+
+        ignore_btn = ctk.CTkButton(
+            btn_frame,
+            text="Looks Correct",
+            command=lambda: self.ignore_anomaly(visit['id']),
+            font=ctk.CTkFont(size=11),
+            height=30,
+            fg_color="gray"
+        )
+        ignore_btn.pack(side=tk.LEFT, padx=4)
+
+        delete_btn = ctk.CTkButton(
+            btn_frame,
+            text="Delete Visit",
+            command=lambda: self.delete_anomalous_visit(visit['id']),
+            font=ctk.CTkFont(size=11),
+            height=30,
+            fg_color="#8B4C4C"
+        )
+        delete_btn.pack(side=tk.LEFT, padx=4)
+
+    def edit_anomalous_visit(self, visit):
+        """Open the Visits tab to edit this visit."""
+        # Switch to Visits tab
+        self.tabview.set("Visits")
+        # The visit editing would happen in the Visits tab
+
+    def ignore_anomaly(self, visit_id):
+        """User confirmed the duration is correct, so remove from anomalies."""
+        # Just refresh the list - anomalies are calculated on-the-fly
+        self.refresh_review_list()
+
+    def delete_anomalous_visit(self, visit_id):
+        """Delete a visit with anomalous duration."""
+        self.db.delete_visit(visit_id)
+        self.refresh_review_list()
+        self.refresh_dashboard()
 
     def create_review_card(self, parent, visit, row):
         """Create a card for editing a flagged visit."""

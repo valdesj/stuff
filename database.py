@@ -324,6 +324,67 @@ class Database:
         """)
         return [dict(row) for row in cursor.fetchall()]
 
+    def get_visits_with_anomalous_durations(self, threshold_percent: float = 300.0) -> List[Dict]:
+        """
+        Get visits where duration is significantly different from the client's average.
+
+        Args:
+            threshold_percent: Percentage threshold (e.g., 300 means 3x the average)
+
+        Returns:
+            List of visits with anomalous durations, including comparison data
+        """
+        cursor = self.connection.cursor()
+
+        # Get all clients with multiple visits (need at least 2 for comparison)
+        cursor.execute("""
+            SELECT client_id, COUNT(*) as visit_count
+            FROM visits
+            GROUP BY client_id
+            HAVING visit_count >= 2
+        """)
+        clients_with_visits = [row['client_id'] for row in cursor.fetchall()]
+
+        anomalous_visits = []
+
+        for client_id in clients_with_visits:
+            # Get all visits for this client
+            cursor.execute("""
+                SELECT v.*, c.name as client_name
+                FROM visits v
+                JOIN clients c ON v.client_id = c.id
+                WHERE v.client_id = ?
+                ORDER BY v.visit_date DESC
+            """, (client_id,))
+            visits = [dict(row) for row in cursor.fetchall()]
+
+            if len(visits) < 2:
+                continue
+
+            # Calculate average duration for this client
+            durations = [v['duration_minutes'] for v in visits]
+            avg_duration = sum(durations) / len(durations)
+
+            # Find visits that are outliers
+            for visit in visits:
+                if avg_duration == 0:
+                    continue
+
+                # Calculate percentage difference
+                percent_of_avg = (visit['duration_minutes'] / avg_duration) * 100
+
+                # Flag if significantly above threshold
+                if percent_of_avg >= threshold_percent:
+                    visit['avg_duration'] = avg_duration
+                    visit['percent_of_avg'] = percent_of_avg
+                    visit['total_visits'] = len(visits)
+                    anomalous_visits.append(visit)
+
+        # Sort by most extreme first
+        anomalous_visits.sort(key=lambda x: x['percent_of_avg'], reverse=True)
+
+        return anomalous_visits
+
     def get_visit_by_id(self, visit_id: int) -> Optional[Dict]:
         """Get a specific visit by ID."""
         cursor = self.connection.cursor()
