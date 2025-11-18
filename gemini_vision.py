@@ -47,10 +47,10 @@ class VisitImageParser:
                     try:
                         print(f"Trying model: {model_name}...")
                         self.model = genai.GenerativeModel(model_name)
-                        print(f"✓ Successfully initialized Gemini with model: {model_name}")
+                        print(f"[OK] Successfully initialized Gemini with model: {model_name}")
                         break
                     except Exception as e:
-                        print(f"✗ Failed: {e}")
+                        print(f"[FAIL] {e}")
                         last_error = e
                         continue
 
