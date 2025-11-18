@@ -156,9 +156,12 @@ class LandscapingApp(ctk.CTk):
         """Get image parser with lazy initialization."""
         if self.image_parser is None:
             gemini_api_key = self.db.get_setting('gemini_api_key', '')
+            print(f"DEBUG: Retrieved API key from settings: '{gemini_api_key[:10] if gemini_api_key else 'EMPTY'}...'")
+            print(f"DEBUG: API key length: {len(gemini_api_key) if gemini_api_key else 0}")
             self.image_parser = VisitImageParser(
                 api_key=gemini_api_key if gemini_api_key else None
             )
+            print(f"DEBUG: Parser available: {self.image_parser.is_available()}")
         return self.image_parser
 
     def on_tab_change(self):
@@ -5461,9 +5464,14 @@ OCR Scanning Instructions (To be implemented):
 
                 # Save Gemini API key
                 gemini_key = gemini_entry.get().strip()
+                print(f"DEBUG: Saving API key: '{gemini_key[:10] if gemini_key else 'EMPTY'}...' (length: {len(gemini_key)})")
                 self.db.set_setting('gemini_api_key', gemini_key)
+                # Verify it was saved
+                saved_key = self.db.get_setting('gemini_api_key', '')
+                print(f"DEBUG: Verified saved key: '{saved_key[:10] if saved_key else 'EMPTY'}...' (length: {len(saved_key)})")
                 # Reset image parser to pick up new API key
                 self.image_parser = None
+                print("DEBUG: Image parser reset to None")
 
                 # Save working year
                 new_year = year_var.get()
