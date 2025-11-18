@@ -28,14 +28,42 @@ class VisitImageParser:
         if self.available:
             try:
                 genai.configure(api_key=api_key)
-                self.model = genai.GenerativeModel('gemini-pro-vision')
+
+                # Try different model names in order of preference
+                model_names = [
+                    'gemini-1.5-flash-latest',
+                    'gemini-1.5-pro-latest',
+                    'gemini-pro-vision',
+                    'gemini-1.5-flash',
+                    'gemini-1.5-pro',
+                    'models/gemini-1.5-flash-latest',
+                    'models/gemini-pro-vision'
+                ]
+
+                self.model = None
+                last_error = None
+
+                for model_name in model_names:
+                    try:
+                        self.model = genai.GenerativeModel(model_name)
+                        print(f"Successfully initialized Gemini with model: {model_name}")
+                        break
+                    except Exception as e:
+                        last_error = e
+                        continue
+
+                if self.model is None:
+                    print(f"Failed to initialize any Gemini model. Last error: {last_error}")
+                    self.available = False
+
             except Exception as e:
-                print(f"Failed to initialize Gemini: {e}")
+                print(f"Failed to configure Gemini: {e}")
                 self.available = False
 
     def is_available(self) -> bool:
         """Check if Gemini is available."""
         return self.available
+
 
     def parse_image(self, image_path: str) -> Dict:
         """
