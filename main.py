@@ -12,6 +12,7 @@ from tkinter import messagebox, ttk, filedialog
 from tkcalendar import DateEntry
 from typing import Optional, List, Dict
 from collections import defaultdict
+import threading
 
 # Matplotlib imports (moved to module level for performance)
 import matplotlib
@@ -79,7 +80,7 @@ class LandscapingApp(ctk.CTk):
         self.tab_daily = self.tabview.add("Daily Schedule")
         self.tab_todo = self.tabview.add("To-Do")
         self.tab_materials = self.tabview.add("Materials")
-        self.tab_import = self.tabview.add("Import Data")
+        self.tab_import = self.tabview.add("Import Historical Data")
 
         # Initialize tabs
         self.init_dashboard_tab()
@@ -156,12 +157,9 @@ class LandscapingApp(ctk.CTk):
         """Get image parser with lazy initialization."""
         if self.image_parser is None:
             gemini_api_key = self.db.get_setting('gemini_api_key', '')
-            print(f"DEBUG: Retrieved API key from settings: '{gemini_api_key[:10] if gemini_api_key else 'EMPTY'}...'")
-            print(f"DEBUG: API key length: {len(gemini_api_key) if gemini_api_key else 0}")
             self.image_parser = VisitImageParser(
                 api_key=gemini_api_key if gemini_api_key else None
             )
-            print(f"DEBUG: Parser available: {self.image_parser.is_available()}")
         return self.image_parser
 
     def on_tab_change(self):
@@ -3140,56 +3138,64 @@ class LandscapingApp(ctk.CTk):
         )
         status_label.pack(pady=5)
 
-        progress_dialog.update()
+        # Run Gemini parsing in background thread so progress bar animates
+        result_container = {}
 
-        # Scan the image
-        try:
-            result = parser.parse_image(file_path)
-            progress_bar.stop()
-            progress_dialog.destroy()
+        def parse_in_background():
+            try:
+                result_container['result'] = parser.parse_image(file_path)
+            except Exception as e:
+                result_container['error'] = str(e)
 
-            if not result['success']:
-                error_msg = result.get('error', 'Unknown error occurred')
+        # Start background thread
+        thread = threading.Thread(target=parse_in_background, daemon=True)
+        thread.start()
 
-                # Show helpful message based on error
-                if 'internet' in error_msg.lower() or 'request' in error_msg.lower():
-                    messagebox.showerror(
-                        "Scan Failed",
-                        f"{error_msg}\n\n"
-                        "Cloud OCR requires an internet connection.\n"
-                        "Please check your connection and try again."
-                    )
-                else:
-                    messagebox.showerror("Scan Failed", error_msg)
-                return
-
-            if not result['records']:
-                messagebox.showinfo(
-                    "No Records Found",
-                    "No visit records were found in the image.\n\n"
-                    "Make sure the image contains:\n"
-                    "- Date (MM/DD/YYYY or YYYY-MM-DD)\n"
-                    "- Time range (h:MM - h:MM)\n"
-                    "- Client name (optional)"
-                )
-                return
-
-            # Show review dialog
-            self.show_scanned_visits_dialog(result['records'], parser)
-
-        except Exception as e:
-            progress_dialog.destroy()
-            error_str = str(e)
-
-            # Provide helpful error messages
-            if 'connection' in error_str.lower() or 'network' in error_str.lower():
-                messagebox.showerror(
-                    "Connection Error",
-                    "Failed to connect to cloud OCR service.\n\n"
-                    "Please check your internet connection and try again."
-                )
+        # Wait for thread to complete while keeping UI responsive
+        def check_thread():
+            if thread.is_alive():
+                # Thread still running, check again in 100ms
+                progress_dialog.after(100, check_thread)
             else:
-                messagebox.showerror("Error", f"Failed to scan image:\n{error_str}")
+                # Thread finished
+                progress_bar.stop()
+                progress_dialog.destroy()
+
+                # Handle error
+                if 'error' in result_container:
+                    error_str = result_container['error']
+                    if 'connection' in error_str.lower() or 'network' in error_str.lower():
+                        messagebox.showerror(
+                            "Connection Error",
+                            "Failed to connect to Gemini API.\n\nPlease check your internet connection and try again."
+                        )
+                    else:
+                        messagebox.showerror("Error", f"Failed to scan image:\n{error_str}")
+                    return
+
+                # Handle result
+                result = result_container.get('result', {})
+                if not result.get('success'):
+                    error_msg = result.get('error', 'Unknown error occurred')
+                    messagebox.showerror("Scan Failed", error_msg)
+                    return
+
+                if not result.get('records'):
+                    messagebox.showinfo(
+                        "No Records Found",
+                        "No visit records were found in the image.\n\n"
+                        "Make sure the image contains:\n"
+                        "- Date (MM/DD/YYYY or YYYY-MM-DD)\n"
+                        "- Time range (h:MM - h:MM)\n"
+                        "- Client name"
+                    )
+                    return
+
+                # Show review dialog
+                self.show_scanned_visits_dialog(result['records'], parser)
+
+        # Start checking thread status
+        progress_dialog.after(100, check_thread)
 
     def show_scanned_visits_dialog(self, records: list, parser):
         """Show dialog to review and import scanned visit records."""
@@ -5779,14 +5785,9 @@ OCR Scanning Instructions (To be implemented):
 
                 # Save Gemini API key
                 gemini_key = gemini_entry.get().strip()
-                print(f"DEBUG: Saving API key: '{gemini_key[:10] if gemini_key else 'EMPTY'}...' (length: {len(gemini_key)})")
                 self.db.set_setting('gemini_api_key', gemini_key)
-                # Verify it was saved
-                saved_key = self.db.get_setting('gemini_api_key', '')
-                print(f"DEBUG: Verified saved key: '{saved_key[:10] if saved_key else 'EMPTY'}...' (length: {len(saved_key)})")
                 # Reset image parser to pick up new API key
                 self.image_parser = None
-                print("DEBUG: Image parser reset to None")
 
                 # Save working year
                 new_year = year_var.get()
