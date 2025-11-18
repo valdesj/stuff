@@ -1,43 +1,31 @@
-"""OCR scanning functionality for importing paper records."""
+"""OCR scanning functionality using Google Gemini AI."""
 try:
-    import pytesseract
+    import google.generativeai as genai
     from PIL import Image
-    OCR_AVAILABLE = True
+    GEMINI_AVAILABLE = True
 except ImportError:
-    OCR_AVAILABLE = False
+    GEMINI_AVAILABLE = False
     try:
         from PIL import Image
     except ImportError:
         Image = None
 
-try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
-
 import re
 from datetime import datetime
 from typing import List, Dict, Optional
 import os
-import requests
-import base64
-import io
 
 
 class OCRScanner:
-    """Handles scanning and parsing paper records using OCR."""
+    """Handles scanning and parsing handwritten visit records using Google Gemini AI."""
 
-    def __init__(self, use_cloud: bool = True, gemini_api_key: Optional[str] = None):
+    def __init__(self, gemini_api_key: Optional[str] = None):
         """
-        Initialize the OCR scanner.
+        Initialize the OCR scanner with Gemini AI.
 
         Args:
-            use_cloud: If True, use cloud OCR (requires internet). If False, use local tesseract.
-            gemini_api_key: Optional Gemini API key for advanced vision parsing (recommended)
+            gemini_api_key: Gemini API key for vision parsing (required)
         """
-        self.ocr_available = OCR_AVAILABLE
-        self.use_cloud = use_cloud
         self.gemini_available = GEMINI_AVAILABLE and gemini_api_key is not None
         self.gemini_api_key = gemini_api_key
 
@@ -52,15 +40,11 @@ class OCRScanner:
 
     def is_available(self) -> bool:
         """Check if OCR functionality is available."""
-        if self.gemini_available:
-            return True  # Gemini is best option
-        if self.use_cloud:
-            return True  # Cloud OCR is always available if internet works
-        return self.ocr_available
+        return self.gemini_available
 
-    def scan_image_gemini(self, image_path: str) -> Optional[str]:
+    def scan_image(self, image_path: str) -> Optional[str]:
         """
-        Scan an image using Google Gemini Vision API (best for handwritten tables).
+        Scan an image using Google Gemini Vision API.
 
         Args:
             image_path: Path to the image file
@@ -69,6 +53,9 @@ class OCRScanner:
             Extracted text or None if failed
         """
         if not self.gemini_available:
+            return None
+
+        if not os.path.exists(image_path):
             return None
 
         try:
@@ -100,6 +87,7 @@ class OCRScanner:
             Be thorough and extract every visit shown in the image.
             """
 
+            print("Using Gemini Vision AI for OCR...")
             # Generate content with Gemini
             response = self.gemini_model.generate_content([prompt, img])
 
@@ -111,171 +99,6 @@ class OCRScanner:
         except Exception as e:
             print(f"Gemini OCR failed: {str(e)}")
             return None
-
-    def scan_image_cloud(self, image_path: str) -> Optional[str]:
-        """
-        Scan an image using cloud OCR API (OCR.space - free, no API key needed).
-
-        Args:
-            image_path: Path to the image file
-
-        Returns:
-            Extracted text or None if failed
-        """
-        try:
-            # Read image and resize if too large (OCR.space free tier has size limits)
-            if Image is None:
-                # PIL not available, just read the file
-                with open(image_path, 'rb') as f:
-                    image_data = f.read()
-            else:
-                # PIL is available, use it to resize if needed
-                img = Image.open(image_path)
-
-                # Resize if larger than 1MB when saved
-                max_size = 1024 * 1024  # 1MB
-                img_byte_arr = io.BytesIO()
-                img.save(img_byte_arr, format='JPEG', quality=85)
-
-                # If too large, resize
-                if len(img_byte_arr.getvalue()) > max_size:
-                    # Resize to 50% and try again
-                    new_size = (img.width // 2, img.height // 2)
-                    img = img.resize(new_size, Image.Resampling.LANCZOS)
-                    img_byte_arr = io.BytesIO()
-                    img.save(img_byte_arr, format='JPEG', quality=75)
-
-                image_data = img_byte_arr.getvalue()
-
-            # Prepare request to OCR.space API (free tier)
-            url = 'https://api.ocr.space/parse/image'
-
-            # Prepare the payload
-            files = {
-                'file': ('image.jpg', image_data, 'image/jpeg')
-            }
-
-            payload = {
-                'apikey': 'K87899142388957',  # Public free API key
-                'language': 'eng',
-                'isOverlayRequired': 'false',
-                'OCREngine': '1',  # Use OCR Engine 1 (more permissive on free tier)
-                'scale': 'true'
-            }
-
-            # Make request with timeout
-            response = requests.post(url, files=files, data=payload, timeout=60)
-
-            if response.status_code == 200:
-                result = response.json()
-
-                if result.get('IsErroredOnProcessing'):
-                    error_msg = result.get('ErrorMessage', ['Unknown error'])[0]
-                    print(f"Cloud OCR error: {error_msg}")
-                    return None
-
-                # Extract text from result
-                parsed_results = result.get('ParsedResults', [])
-                if parsed_results:
-                    text = parsed_results[0].get('ParsedText', '')
-                    return text
-
-            return None
-
-        except requests.exceptions.RequestException as e:
-            print(f"Cloud OCR request failed: {str(e)}")
-            return None
-        except Exception as e:
-            print(f"Cloud OCR failed: {str(e)}")
-            return None
-
-    def scan_image(self, image_path: str, preprocess: bool = True) -> Optional[str]:
-        """
-        Scan an image and extract text using OCR.
-        Priority: Gemini > Cloud OCR > Local Tesseract
-
-        Args:
-            image_path: Path to the image file
-            preprocess: Whether to preprocess image for better OCR accuracy (local tesseract only)
-
-        Returns:
-            Extracted text or None if failed
-        """
-        if not os.path.exists(image_path):
-            return None
-
-        # Try Gemini first (best for handwritten tables)
-        if self.gemini_available:
-            print("Using Gemini Vision AI for OCR...")
-            text = self.scan_image_gemini(image_path)
-            if text:
-                return text
-            print("Gemini OCR failed, trying other methods...")
-
-        # Try cloud OCR second (no installation needed)
-        if self.use_cloud:
-            print("Using cloud OCR...")
-            text = self.scan_image_cloud(image_path)
-            if text:
-                return text
-            print("Cloud OCR failed, trying local tesseract...")
-
-        # Fallback to local tesseract
-        if not self.ocr_available:
-            return None
-
-        try:
-            image = Image.open(image_path)
-
-            # Preprocess image for better OCR accuracy
-            if preprocess:
-                image = self._preprocess_image(image)
-
-            # Use different PSM modes for better results
-            custom_config = r'--oem 3 --psm 6'  # PSM 6: Assume uniform block of text
-            text = pytesseract.image_to_string(image, config=custom_config)
-            return text
-        except Exception as e:
-            print(f"Local OCR failed: {str(e)}")
-            return None
-
-    def _preprocess_image(self, image: 'Image.Image') -> 'Image.Image':
-        """
-        Preprocess image to improve OCR accuracy.
-
-        Args:
-            image: PIL Image object
-
-        Returns:
-            Preprocessed PIL Image object
-        """
-        try:
-            # Convert to RGB if necessary
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
-
-            # Resize if too small (OCR works better with larger images)
-            width, height = image.size
-            if width < 1000:
-                scale_factor = 1000 / width
-                new_size = (int(width * scale_factor), int(height * scale_factor))
-                image = image.resize(new_size, Image.Resampling.LANCZOS)
-
-            # Enhance contrast and sharpness
-            from PIL import ImageEnhance
-
-            # Increase contrast
-            enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(1.5)
-
-            # Increase sharpness
-            enhancer = ImageEnhance.Sharpness(image)
-            image = enhancer.enhance(2.0)
-
-            return image
-        except Exception as e:
-            print(f"Image preprocessing failed: {str(e)}")
-            return image  # Return original if preprocessing fails
 
     def parse_gemini_structured_output(self, text: str) -> List[Dict]:
         """
@@ -332,84 +155,13 @@ class OCRScanner:
         """
         Parse visit records from OCR text.
 
-        Expected format (flexible):
-        - Date: YYYY-MM-DD or MM/DD/YYYY
-        - Time: HH:MM - HH:MM or HH:MM to HH:MM
-        - Client name on same or nearby line
-
         Args:
             text: OCR extracted text
 
         Returns:
             List of parsed visit records
         """
-        # Try Gemini structured format first
-        gemini_records = self.parse_gemini_structured_output(text)
-        if gemini_records:
-            return gemini_records
-
-        # Fall back to traditional parsing
-        records = []
-        lines = text.split('\n')
-
-        # Patterns for matching (enhanced for handwritten text)
-        date_pattern = r'(\d{4}-\d{2}-\d{2}|\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})'
-        # Enhanced time pattern to handle handwritten variations:
-        # - Handles missing colons (930 instead of 9:30)
-        # - Handles periods instead of colons (9.30)
-        # - Handles various separators (-, to, ~)
-        time_pattern = r'(\d{1,2}[:.\s]?\d{2})\s*[-to~]+\s*(\d{1,2}[:.\s]?\d{2})'
-
-        current_record = {}
-
-        for i, line in enumerate(lines):
-            line = line.strip()
-            if not line:
-                # Empty line might indicate end of record
-                if current_record:
-                    if self._is_valid_record(current_record):
-                        records.append(current_record.copy())
-                    current_record = {}
-                continue
-
-            # Look for date
-            date_match = re.search(date_pattern, line)
-            if date_match:
-                date_str = date_match.group(1)
-                normalized_date = self._normalize_date(date_str)
-                if normalized_date:
-                    current_record['date'] = normalized_date
-                    current_record['raw_line'] = line
-
-            # Look for time range
-            time_match = re.search(time_pattern, line)
-            if time_match:
-                # Normalize times to handle handwritten variations
-                start_time = self._normalize_time(time_match.group(1))
-                end_time = self._normalize_time(time_match.group(2))
-                if start_time and end_time:
-                    current_record['start_time'] = start_time
-                    current_record['end_time'] = end_time
-
-            # If we don't have a client name yet, try to extract it
-            if 'client_name' not in current_record and line:
-                # Remove date and time from line to get potential client name
-                clean_line = re.sub(date_pattern, '', line)
-                clean_line = re.sub(time_pattern, '', clean_line)
-                clean_line = clean_line.strip()
-
-                # If there's text left, it might be the client name
-                if clean_line and len(clean_line) > 2:
-                    # Remove common prefixes/labels
-                    clean_line = re.sub(r'^(client|name|for):\s*', '', clean_line, flags=re.IGNORECASE)
-                    if clean_line:
-                        current_record['client_name'] = clean_line
-
-        # Don't forget the last record
-        if current_record and self._is_valid_record(current_record):
-            records.append(current_record)
-
-        return records
+        return self.parse_gemini_structured_output(text)
 
     def _normalize_date(self, date_str: str) -> Optional[str]:
         """
@@ -490,53 +242,6 @@ class OCRScanner:
         required_fields = ['date', 'start_time', 'end_time']
         return all(field in record for field in required_fields)
 
-    def parse_client_info(self, text: str) -> Optional[Dict]:
-        """
-        Parse client information from OCR text.
-
-        Args:
-            text: OCR extracted text
-
-        Returns:
-            Dictionary with client information or None
-        """
-        client_info = {}
-        lines = text.split('\n')
-
-        # Patterns for extracting information
-        name_pattern = r'(?:name|client):\s*(.+)'
-        email_pattern = r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})'
-        phone_pattern = r'(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})'
-        charge_pattern = r'(?:charge|fee|rate).*?\$?\s*(\d+(?:\.\d{2})?)'
-
-        for line in lines:
-            line = line.strip()
-
-            # Look for name
-            name_match = re.search(name_pattern, line, re.IGNORECASE)
-            if name_match:
-                client_info['name'] = name_match.group(1).strip()
-
-            # Look for email
-            email_match = re.search(email_pattern, line)
-            if email_match:
-                client_info['email'] = email_match.group(1)
-
-            # Look for phone
-            phone_match = re.search(phone_pattern, line)
-            if phone_match:
-                client_info['phone'] = phone_match.group(1)
-
-            # Look for monthly charge
-            charge_match = re.search(charge_pattern, line, re.IGNORECASE)
-            if charge_match:
-                try:
-                    client_info['monthly_charge'] = float(charge_match.group(1))
-                except ValueError:
-                    pass
-
-        return client_info if client_info else None
-
     def validate_and_calculate_duration(self, record: Dict) -> Dict:
         """
         Validate time fields and calculate duration for a record.
@@ -595,7 +300,7 @@ class OCRScanner:
                 print(f"First 500 chars: {text[:500]}")
 
         if not text or len(text) < 10:
-            result['error'] = 'Failed to extract text from image or text too short'
+            result['error'] = 'Failed to extract text from image. Make sure Gemini API key is configured in Settings.'
             result['debug_info']['text_length'] = len(text) if text else 0
             return result
 
@@ -613,7 +318,7 @@ class OCRScanner:
         result['debug_info']['raw_records_count'] = len(records)
 
         if not records:
-            result['error'] = 'No valid visit records found in the image. The image may be handwritten or in table format that needs manual review.'
+            result['error'] = 'No valid visit records found. Make sure the image contains visit data in the expected format.'
             # Still return the text so user can see what was extracted
             result['success'] = False
             return result

@@ -158,9 +158,8 @@ class LandscapingApp(ctk.CTk):
             # Try to get Gemini API key from settings
             gemini_api_key = self.db.get_setting('gemini_api_key', '')
 
-            # Initialize OCR scanner with Gemini if API key is available
+            # Initialize OCR scanner with Gemini API key
             self.ocr_scanner = OCRScanner(
-                use_cloud=True,
                 gemini_api_key=gemini_api_key if gemini_api_key else None
             )
         return self.ocr_scanner
