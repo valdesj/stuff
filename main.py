@@ -1390,6 +1390,14 @@ class LandscapingApp(ctk.CTk):
         if not client:
             return
 
+        # Create tabview for Client Details and Aliases
+        tabview = ctk.CTkTabview(self.client_details_frame)
+        tabview.pack(fill="both", expand=True, padx=5, pady=5)
+
+        tab_details = tabview.add("Client Details")
+        tab_aliases = tabview.add("Aliases")
+
+        # ==================== CLIENT DETAILS TAB ====================
         row = 0
 
         # Client information form
@@ -1407,7 +1415,7 @@ class LandscapingApp(ctk.CTk):
 
         for label_text, field_name in fields:
             label = ctk.CTkLabel(
-                self.client_details_frame,
+                tab_details,
                 text=label_text,
                 font=ctk.CTkFont(size=14)
             )
@@ -1415,14 +1423,14 @@ class LandscapingApp(ctk.CTk):
 
             if field_name == "notes":
                 entry = ctk.CTkTextbox(
-                    self.client_details_frame,
+                    tab_details,
                     height=80,
                     font=ctk.CTkFont(size=13)
                 )
                 entry.insert("1.0", client.get(field_name, ""))
             else:
                 entry = ctk.CTkEntry(
-                    self.client_details_frame,
+                    tab_details,
                     font=ctk.CTkFont(size=13),
                     height=35
                 )
@@ -1435,7 +1443,7 @@ class LandscapingApp(ctk.CTk):
         # No additional services checkbox
         no_services_var = tk.BooleanVar(value=self.db.get_client_no_additional_services(client_id))
         no_services_check = ctk.CTkCheckBox(
-            self.client_details_frame,
+            tab_details,
             text="This client doesn't need additional services/materials",
             variable=no_services_var,
             font=ctk.CTkFont(size=12),
@@ -1445,7 +1453,7 @@ class LandscapingApp(ctk.CTk):
         row += 1
 
         # Buttons row
-        btn_frame = ctk.CTkFrame(self.client_details_frame, fg_color="transparent")
+        btn_frame = ctk.CTkFrame(tab_details, fg_color="transparent")
         btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=15)
         row += 1
 
@@ -1492,7 +1500,7 @@ class LandscapingApp(ctk.CTk):
 
         # Client materials section
         materials_header = ctk.CTkLabel(
-            self.client_details_frame,
+            tab_details,
             text="Materials & Services for this Client",
             font=ctk.CTkFont(size=16, weight="bold")
         )
@@ -1500,7 +1508,7 @@ class LandscapingApp(ctk.CTk):
         row += 1
 
         # Create materials table frame
-        self.materials_table_frame = ctk.CTkFrame(self.client_details_frame)
+        self.materials_table_frame = ctk.CTkFrame(tab_details)
         self.materials_table_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
         self.materials_table_frame.grid_columnconfigure(0, weight=2)  # Material name
         self.materials_table_frame.grid_columnconfigure(1, weight=1)  # Cost
@@ -1521,7 +1529,99 @@ class LandscapingApp(ctk.CTk):
         # Build the table
         self.rebuild_materials_table(client_materials, num_empty_rows=1)
 
-        row += 1
+        # ==================== ALIASES TAB ====================
+        # Get aliases for this client
+        aliases = self.db.get_client_aliases(client_id)
+
+        # Header
+        alias_header = ctk.CTkLabel(
+            tab_aliases,
+            text=f"Alternative Names for {client['name']}",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        alias_header.pack(pady=15)
+
+        info_label = ctk.CTkLabel(
+            tab_aliases,
+            text="Aliases help match scanned names to this client automatically.\nAdd common variations or misspellings of the client name.",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        info_label.pack(pady=5)
+
+        # Add new alias section
+        add_frame = ctk.CTkFrame(tab_aliases)
+        add_frame.pack(fill="x", padx=20, pady=15)
+
+        ctk.CTkLabel(
+            add_frame,
+            text="Add New Alias:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(side=tk.LEFT, padx=5)
+
+        new_alias_entry = ctk.CTkEntry(add_frame, placeholder_text="Enter alias name", width=300)
+        new_alias_entry.pack(side=tk.LEFT, padx=5)
+
+        def add_alias():
+            alias_name = new_alias_entry.get().strip()
+            if not alias_name:
+                messagebox.showwarning("Empty Alias", "Please enter an alias name.")
+                return
+            if alias_name.lower() == client['name'].lower():
+                messagebox.showwarning("Invalid Alias", "Alias cannot be the same as the client name.")
+                return
+
+            self.db.add_client_alias(client_id, alias_name)
+            messagebox.showinfo("Alias Added", f'Added "{alias_name}" as an alias.')
+            new_alias_entry.delete(0, tk.END)
+            # Refresh the client details to show the new alias
+            self.show_client_details(client_id)
+
+        ctk.CTkButton(
+            add_frame,
+            text="Add Alias",
+            command=add_alias,
+            fg_color="#2e7d32",
+            hover_color="#1b5e20",
+            width=100
+        ).pack(side=tk.LEFT, padx=5)
+
+        # List of existing aliases
+        aliases_frame = ctk.CTkScrollableFrame(tab_aliases, height=300)
+        aliases_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        if aliases:
+            for alias in aliases:
+                alias_row = ctk.CTkFrame(aliases_frame)
+                alias_row.pack(fill="x", pady=5)
+
+                ctk.CTkLabel(
+                    alias_row,
+                    text=alias,
+                    font=ctk.CTkFont(size=13)
+                ).pack(side=tk.LEFT, padx=10)
+
+                def delete_alias(a=alias):
+                    if messagebox.askyesno("Delete Alias", f'Delete alias "{a}"?'):
+                        self.db.delete_client_alias(client_id, a)
+                        self.show_client_details(client_id)
+
+                ctk.CTkButton(
+                    alias_row,
+                    text="Delete",
+                    command=delete_alias,
+                    fg_color="red",
+                    hover_color="darkred",
+                    width=80,
+                    height=28
+                ).pack(side=tk.RIGHT, padx=10)
+        else:
+            ctk.CTkLabel(
+                aliases_frame,
+                text="No aliases yet. Add one above to help with automatic name matching.",
+                font=ctk.CTkFont(size=12),
+                text_color="gray"
+            ).pack(pady=20)
 
     def rebuild_materials_table(self, existing_materials, num_empty_rows=1):
         """Build or rebuild the materials table."""
@@ -1926,7 +2026,7 @@ class LandscapingApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save changes: {str(e)}")
 
-    def add_new_client(self):
+    def add_new_client(self, default_name: str = ""):
         """Open dialog to add a new client."""
         dialog = ctk.CTkToplevel(self)
         dialog.title("Add New Client")
@@ -1969,6 +2069,9 @@ class LandscapingApp(ctk.CTk):
                 entry = ctk.CTkTextbox(dialog, height=80, font=ctk.CTkFont(size=13))
             else:
                 entry = ctk.CTkEntry(dialog, font=ctk.CTkFont(size=13), height=35)
+                # Pre-fill name if provided
+                if field_name == "name" and default_name:
+                    entry.insert(0, default_name)
 
             entry.grid(row=row, column=1, sticky="ew", padx=20, pady=8)
             entries[field_name] = entry
@@ -2874,6 +2977,117 @@ class LandscapingApp(ctk.CTk):
                 self.load_client_visits(self.visit_clients_data[client_name])
             self.refresh_dashboard()
 
+    # ==================== ALIAS MANAGEMENT ====================
+
+    def show_alias_dialog(self, scanned_name: str, all_clients: List[Dict], client_var: tk.StringVar):
+        """Show dialog to save scanned name as alias or create new client."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Client Name Not Found")
+        dialog.geometry("500x400")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - 250
+        y = (dialog.winfo_screenheight() // 2) - 200
+        dialog.geometry(f"500x400+{x}+{y}")
+
+        # Header
+        header = ctk.CTkLabel(
+            dialog,
+            text=f'Scanned name: "{scanned_name}"',
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        header.pack(pady=15)
+
+        question = ctk.CTkLabel(
+            dialog,
+            text="Is this an existing client with a different name,\nor a new client?",
+            font=ctk.CTkFont(size=12)
+        )
+        question.pack(pady=5)
+
+        # Option 1: Existing client (alias)
+        alias_frame = ctk.CTkFrame(dialog)
+        alias_frame.pack(fill="x", padx=20, pady=10)
+
+        ctk.CTkLabel(
+            alias_frame,
+            text="Option 1: This is an existing client (save as alias)",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(pady=10)
+
+        ctk.CTkLabel(
+            alias_frame,
+            text="Select the existing client:",
+            font=ctk.CTkFont(size=11)
+        ).pack(pady=5)
+
+        client_names = [c['name'] for c in all_clients]
+        alias_client_var = tk.StringVar(value="Select client...")
+        alias_client_menu = ctk.CTkOptionMenu(
+            alias_frame,
+            values=client_names,
+            variable=alias_client_var,
+            width=400
+        )
+        alias_client_menu.pack(pady=5)
+
+        def save_as_alias():
+            selected_client = alias_client_var.get()
+            if selected_client == "Select client...":
+                messagebox.showwarning("No Selection", "Please select a client first.")
+                return
+
+            # Find client ID
+            client = next((c for c in all_clients if c['name'] == selected_client), None)
+            if client:
+                self.db.add_client_alias(client['id'], scanned_name)
+                client_var.set(selected_client)
+                messagebox.showinfo("Alias Saved", f'Saved "{scanned_name}" as an alias for {selected_client}')
+                dialog.destroy()
+
+        ctk.CTkButton(
+            alias_frame,
+            text="Save as Alias",
+            command=save_as_alias,
+            fg_color="#2e7d32",
+            hover_color="#1b5e20"
+        ).pack(pady=10)
+
+        # Option 2: New client
+        new_frame = ctk.CTkFrame(dialog)
+        new_frame.pack(fill="x", padx=20, pady=10)
+
+        ctk.CTkLabel(
+            new_frame,
+            text="Option 2: This is a new client",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(pady=10)
+
+        def create_new_client():
+            dialog.destroy()
+            # Open the add client dialog with the scanned name pre-filled
+            self.add_new_client(default_name=scanned_name)
+
+        ctk.CTkButton(
+            new_frame,
+            text="Create New Client",
+            command=create_new_client,
+            fg_color="#1976d2",
+            hover_color="#1565c0"
+        ).pack(pady=10)
+
+        # Cancel button
+        ctk.CTkButton(
+            dialog,
+            text="Cancel",
+            command=dialog.destroy,
+            fg_color="gray",
+            hover_color="darkgray"
+        ).pack(pady=10)
+
     # ==================== OCR IMAGE SCANNING ====================
 
     def scan_visit_image(self):
@@ -2893,31 +3107,45 @@ class LandscapingApp(ctk.CTk):
         if not file_path:
             return
 
-        # Show progress dialog
+        # Show progress dialog with animated progress bar
         progress_dialog = ctk.CTkToplevel(self)
         progress_dialog.title("Scanning Image")
-        progress_dialog.geometry("400x150")
+        progress_dialog.geometry("450x180")
         progress_dialog.transient(self)
         progress_dialog.grab_set()
 
         # Center dialog
         progress_dialog.update_idletasks()
-        x = (progress_dialog.winfo_screenwidth() // 2) - 200
-        y = (progress_dialog.winfo_screenheight() // 2) - 75
-        progress_dialog.geometry(f"400x150+{x}+{y}")
+        x = (progress_dialog.winfo_screenwidth() // 2) - 225
+        y = (progress_dialog.winfo_screenheight() // 2) - 90
+        progress_dialog.geometry(f"450x180+{x}+{y}")
 
         progress_label = ctk.CTkLabel(
             progress_dialog,
-            text="Scanning image and extracting visit data...\nThis may take a few seconds.",
+            text="Scanning image with Gemini AI...\nThis may take a few seconds.",
             font=ctk.CTkFont(size=13)
         )
-        progress_label.pack(pady=40)
+        progress_label.pack(pady=20)
+
+        # Add animated progress bar
+        progress_bar = ctk.CTkProgressBar(progress_dialog, width=400, mode="indeterminate")
+        progress_bar.pack(pady=10)
+        progress_bar.start()
+
+        status_label = ctk.CTkLabel(
+            progress_dialog,
+            text="Extracting visit data...",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        status_label.pack(pady=5)
 
         progress_dialog.update()
 
         # Scan the image
         try:
             result = parser.parse_image(file_path)
+            progress_bar.stop()
             progress_dialog.destroy()
 
             if not result['success']:
@@ -3094,11 +3322,21 @@ class LandscapingApp(ctk.CTk):
                 row=row, column=0, sticky="w", padx=5, pady=5
             )
 
-            # Try to match client
+            # Try to match client (check exact name/alias first, then fuzzy match)
             scanned_client_name = record.get('client_name', '')
             matched_client = None
+            match_method = None
+
             if scanned_client_name:
-                matched_client = parser.match_client_name(scanned_client_name, all_clients)
+                # First try exact match by name or alias
+                matched_client = self.db.find_client_by_name_or_alias(scanned_client_name)
+                if matched_client:
+                    match_method = "exact"
+                else:
+                    # Fall back to fuzzy matching
+                    matched_client = parser.match_client_name(scanned_client_name, all_clients)
+                    if matched_client:
+                        match_method = "fuzzy"
 
             client_names = [c['name'] for c in all_clients]
             client_var = tk.StringVar()
@@ -3110,13 +3348,34 @@ class LandscapingApp(ctk.CTk):
             else:
                 client_var.set("Select client...")
 
+            client_frame = ctk.CTkFrame(fields_frame, fg_color="transparent")
+            client_frame.grid(row=row, column=1, sticky="ew", padx=5, pady=5)
+            client_frame.grid_columnconfigure(0, weight=1)
+
             client_menu = ctk.CTkOptionMenu(
-                fields_frame,
+                client_frame,
                 values=client_names if client_names else ["No clients"],
                 variable=client_var,
                 height=32
             )
-            client_menu.grid(row=row, column=1, sticky="ew", padx=5, pady=5)
+            client_menu.grid(row=0, column=0, sticky="ew")
+
+            # If fuzzy matched or no match, offer to create alias
+            if scanned_client_name and (match_method == "fuzzy" or not matched_client):
+                def create_alias_for_record():
+                    self.show_alias_dialog(scanned_client_name, all_clients, client_var)
+
+                alias_btn = ctk.CTkButton(
+                    client_frame,
+                    text="Save as Alias" if matched_client else "New Client/Alias",
+                    command=create_alias_for_record,
+                    width=120,
+                    height=28,
+                    fg_color="gray",
+                    font=ctk.CTkFont(size=11)
+                )
+                alias_btn.grid(row=0, column=1, padx=(5, 0))
+
             row += 1
 
             # Check for duplicate
@@ -4523,22 +4782,8 @@ class LandscapingApp(ctk.CTk):
         )
         template_btn.grid(row=3, column=0, sticky="ew", padx=50, pady=10)
 
-        parser = self.get_image_parser()
-        parser_state = "normal" if parser.is_available() else "disabled"
-        parser_text = "📷 Scan Paper Records" if parser.is_available() else "📷 Scan Paper Records (Configure Gemini API)"
-
-        ocr_btn = ctk.CTkButton(
-            self.tab_import,
-            text=parser_text,
-            command=self.scan_paper_records,
-            font=ctk.CTkFont(size=16),
-            height=50,
-            state=parser_state
-        )
-        ocr_btn.grid(row=4, column=0, sticky="ew", padx=50, pady=10)
-
         instructions = ctk.CTkTextbox(self.tab_import, height=300)
-        instructions.grid(row=5, column=0, sticky="ew", padx=20, pady=20)
+        instructions.grid(row=4, column=0, sticky="ew", padx=20, pady=20)
         instructions.insert("1.0", """
 Excel Import Instructions (To be implemented):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
