@@ -136,6 +136,18 @@ class Database:
             )
         """)
 
+        # Client aliases table for name matching
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS client_aliases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_id INTEGER NOT NULL,
+                alias TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+                UNIQUE(client_id, alias)
+            )
+        """)
+
         # Settings table for global configuration
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -295,6 +307,63 @@ class Database:
         """Hard delete - permanently remove client and all related data."""
         self.connection.execute("DELETE FROM clients WHERE id = ?", (client_id,))
         self.connection.commit()
+
+    # ==================== CLIENT ALIASES ====================
+
+    def add_client_alias(self, client_id: int, alias: str):
+        """Add an alias for a client."""
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO client_aliases (client_id, alias)
+                VALUES (?, ?)
+            """, (client_id, alias.strip()))
+            self.connection.commit()
+        except sqlite3.IntegrityError:
+            # Alias already exists for this client
+            pass
+
+    def get_client_aliases(self, client_id: int) -> List[str]:
+        """Get all aliases for a client."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT alias FROM client_aliases
+            WHERE client_id = ?
+            ORDER BY alias
+        """, (client_id,))
+        return [row['alias'] for row in cursor.fetchall()]
+
+    def delete_client_alias(self, client_id: int, alias: str):
+        """Remove an alias from a client."""
+        self.connection.execute("""
+            DELETE FROM client_aliases
+            WHERE client_id = ? AND alias = ?
+        """, (client_id, alias))
+        self.connection.commit()
+
+    def find_client_by_name_or_alias(self, name: str) -> Optional[Dict]:
+        """Find a client by their name or any of their aliases."""
+        cursor = self.connection.cursor()
+
+        # First try exact match on client name
+        cursor.execute("SELECT * FROM clients WHERE LOWER(name) = LOWER(?)", (name.strip(),))
+        result = cursor.fetchone()
+        if result:
+            return dict(result)
+
+        # Then try aliases
+        cursor.execute("""
+            SELECT c.* FROM clients c
+            JOIN client_aliases ca ON c.id = ca.client_id
+            WHERE LOWER(ca.alias) = LOWER(?)
+        """, (name.strip(),))
+        result = cursor.fetchone()
+        if result:
+            return dict(result)
+
+        return None
+
+    # ==================== CLIENT GROUPS ====================
 
     def get_all_client_groups(self) -> List[Dict]:
         """Get all unique bill_to groups with client counts."""
