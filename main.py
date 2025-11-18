@@ -2985,19 +2985,40 @@ class LandscapingApp(ctk.CTk):
         )
         header.pack(pady=15)
 
-        # Tabview for records and raw text
-        tabview = ctk.CTkTabview(dialog)
-        tabview.pack(fill="both", expand=True, padx=20, pady=(0, 10))
-
-        tab_records = tabview.add("Scanned Records")
-        tab_raw = tabview.add("Raw Text")
-
-        # Records tab
-        scroll_frame = ctk.CTkScrollableFrame(tab_records)
-        scroll_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        # Scrollable frame for records
+        scroll_frame = ctk.CTkScrollableFrame(dialog, height=550)
+        scroll_frame.pack(fill="both", expand=True, padx=20, pady=10)
 
         # Get all clients for matching
         all_clients = self.db.get_all_clients(active_only=False)
+
+        # Helper functions for formatting
+        def format_time_12hr(time_24hr):
+            """Convert 24hr time (HH:MM) to 12hr format (h:MM AM/PM)"""
+            try:
+                time_obj = datetime.strptime(time_24hr, '%H:%M')
+                return time_obj.strftime('%I:%M %p').lstrip('0')
+            except:
+                return time_24hr
+
+        def format_date_mdy(date_ymd):
+            """Convert YYYY-MM-DD to MM/DD/YYYY"""
+            try:
+                date_obj = datetime.strptime(date_ymd, '%Y-%m-%d')
+                return date_obj.strftime('%m/%d/%Y')
+            except:
+                return date_ymd
+
+        def check_duplicate(client_id, visit_date):
+            """Check if a visit already exists for this client on this date"""
+            try:
+                existing = self.db.get_visits_by_date(visit_date)
+                for visit in existing:
+                    if visit['client_id'] == client_id:
+                        return True
+                return False
+            except:
+                return False
 
         import_data = []
 
@@ -3006,13 +3027,18 @@ class LandscapingApp(ctk.CTk):
             card = ctk.CTkFrame(scroll_frame, border_width=2, border_color="#3a3a3a")
             card.pack(fill="x", padx=5, pady=10)
 
-            # Header
-            card_header = ctk.CTkLabel(
-                card,
+            # Header with checkbox
+            header_frame = ctk.CTkFrame(card, fg_color="transparent")
+            header_frame.pack(fill="x", pady=8, padx=10)
+
+            import_checkbox_var = tk.BooleanVar(value=True)  # Default to import
+            import_checkbox = ctk.CTkCheckBox(
+                header_frame,
                 text=f"Visit #{idx + 1}",
+                variable=import_checkbox_var,
                 font=ctk.CTkFont(size=14, weight="bold")
             )
-            card_header.pack(pady=8)
+            import_checkbox.pack(side=tk.LEFT)
 
             # Grid for fields
             fields_frame = ctk.CTkFrame(card, fg_color="transparent")
@@ -3026,7 +3052,8 @@ class LandscapingApp(ctk.CTk):
                 row=row, column=0, sticky="w", padx=5, pady=5
             )
             date_entry = ctk.CTkEntry(fields_frame, height=32)
-            date_entry.insert(0, record.get('date', ''))
+            date_formatted = format_date_mdy(record.get('date', ''))
+            date_entry.insert(0, date_formatted)
             date_entry.grid(row=row, column=1, sticky="ew", padx=5, pady=5)
             row += 1
 
@@ -3035,7 +3062,8 @@ class LandscapingApp(ctk.CTk):
                 row=row, column=0, sticky="w", padx=5, pady=5
             )
             start_entry = ctk.CTkEntry(fields_frame, height=32)
-            start_entry.insert(0, record.get('start_time', ''))
+            start_formatted = format_time_12hr(record.get('start_time', ''))
+            start_entry.insert(0, start_formatted)
             start_entry.grid(row=row, column=1, sticky="ew", padx=5, pady=5)
             row += 1
 
@@ -3044,7 +3072,8 @@ class LandscapingApp(ctk.CTk):
                 row=row, column=0, sticky="w", padx=5, pady=5
             )
             end_entry = ctk.CTkEntry(fields_frame, height=32)
-            end_entry.insert(0, record.get('end_time', ''))
+            end_formatted = format_time_12hr(record.get('end_time', ''))
+            end_entry.insert(0, end_formatted)
             end_entry.grid(row=row, column=1, sticky="ew", padx=5, pady=5)
             row += 1
 
@@ -3090,18 +3119,31 @@ class LandscapingApp(ctk.CTk):
             client_menu.grid(row=row, column=1, sticky="ew", padx=5, pady=5)
             row += 1
 
-            # Validation status
-            if record.get('is_valid'):
-                status_color = "green"
-                status_text = "✓ Ready to import"
-            else:
-                status_color = "red"
-                status_text = f"✗ {record.get('validation_error', 'Invalid record')}"
+            # Check for duplicate
+            is_duplicate = False
+            if matched_client:
+                is_duplicate = check_duplicate(matched_client['id'], record.get('date', ''))
+                if is_duplicate:
+                    import_checkbox_var.set(False)  # Uncheck duplicates by default
 
+            # Validation status
+            status_messages = []
+            if record.get('is_valid'):
+                status_messages.append("[OK] Ready to import")
+                status_color = "green"
+            else:
+                status_messages.append(f"[ERROR] {record.get('validation_error', 'Invalid record')}")
+                status_color = "red"
+
+            if is_duplicate:
+                status_messages.append("[DUPLICATE] Visit already exists for this client on this date")
+                status_color = "orange"
+
+            status_text = " | ".join(status_messages)
             status_label = ctk.CTkLabel(
                 card,
                 text=status_text,
-                font=ctk.CTkFont(size=12),
+                font=ctk.CTkFont(size=11),
                 text_color=status_color
             )
             status_label.pack(pady=8)
@@ -3113,26 +3155,28 @@ class LandscapingApp(ctk.CTk):
                 'start_entry': start_entry,
                 'end_entry': end_entry,
                 'client_var': client_var,
-                'clients_dict': {c['name']: c['id'] for c in all_clients}
+                'clients_dict': {c['name']: c['id'] for c in all_clients},
+                'import_checkbox': import_checkbox_var,
+                'is_duplicate': is_duplicate
             })
-
-        # Raw text tab
-        raw_text_widget = ctk.CTkTextbox(tab_raw, height=600)
-        raw_text_widget.pack(fill="both", expand=True, padx=10, pady=10)
-        raw_text_widget.insert("1.0", raw_text)
-        raw_text_widget.configure(state="disabled")
 
         # Buttons
         button_frame = ctk.CTkFrame(dialog, fg_color="transparent")
         button_frame.pack(fill="x", padx=20, pady=10)
 
         def import_all_visits():
-            """Import all valid scanned visits."""
+            """Import all checked scanned visits."""
             imported_count = 0
+            skipped_count = 0
             errors = []
 
             for idx, data in enumerate(import_data):
                 try:
+                    # Check if this visit is selected for import
+                    if not data['import_checkbox'].get():
+                        skipped_count += 1
+                        continue
+
                     # Get client
                     client_name = data['client_var'].get()
                     if client_name not in data['clients_dict']:
@@ -3141,10 +3185,30 @@ class LandscapingApp(ctk.CTk):
 
                     client_id = data['clients_dict'][client_name]
 
-                    # Get date and times
-                    visit_date = data['date_entry'].get().strip()
-                    start_time = data['start_entry'].get().strip()
-                    end_time = data['end_entry'].get().strip()
+                    # Get date and times (convert from display format back to database format)
+                    visit_date_display = data['date_entry'].get().strip()
+                    start_time_display = data['start_entry'].get().strip()
+                    end_time_display = data['end_entry'].get().strip()
+
+                    # Convert date from MM/DD/YYYY to YYYY-MM-DD
+                    try:
+                        date_obj = datetime.strptime(visit_date_display, '%m/%d/%Y')
+                        visit_date = date_obj.strftime('%Y-%m-%d')
+                    except:
+                        # Try if it's already in YYYY-MM-DD format
+                        visit_date = visit_date_display
+
+                    # Convert times from 12hr to 24hr format
+                    def convert_12_to_24(time_12hr):
+                        try:
+                            time_obj = datetime.strptime(time_12hr, '%I:%M %p')
+                            return time_obj.strftime('%H:%M')
+                        except:
+                            # Try if it's already in 24hr format
+                            return time_12hr
+
+                    start_time = convert_12_to_24(start_time_display)
+                    end_time = convert_12_to_24(end_time_display)
 
                     # Calculate duration
                     try:
@@ -3175,14 +3239,20 @@ class LandscapingApp(ctk.CTk):
             dialog.destroy()
 
             # Show result
+            summary_parts = [f"Imported: {imported_count}"]
+            if skipped_count > 0:
+                summary_parts.append(f"Skipped: {skipped_count}")
+
+            summary = " | ".join(summary_parts)
+
             if errors:
                 error_msg = "\n".join(errors)
                 messagebox.showwarning(
                     "Import Complete with Errors",
-                    f"Imported {imported_count} visit(s).\n\nErrors:\n{error_msg}"
+                    f"{summary}\n\nErrors:\n{error_msg}"
                 )
             else:
-                messagebox.showinfo("Success", f"Successfully imported {imported_count} visit(s)!")
+                messagebox.showinfo("Success", f"Successfully imported {imported_count} visit(s)!\n{skipped_count} skipped.")
 
             # Refresh visits view
             self.refresh_visit_client_dropdown()
@@ -3190,7 +3260,7 @@ class LandscapingApp(ctk.CTk):
 
         ctk.CTkButton(
             button_frame,
-            text="Import All Visits",
+            text="Import Checked Visits",
             command=import_all_visits,
             font=ctk.CTkFont(size=14),
             height=40,
