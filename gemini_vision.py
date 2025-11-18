@@ -45,10 +45,12 @@ class VisitImageParser:
 
                 for model_name in model_names:
                     try:
+                        print(f"Trying model: {model_name}...")
                         self.model = genai.GenerativeModel(model_name)
-                        print(f"Successfully initialized Gemini with model: {model_name}")
+                        print(f"✓ Successfully initialized Gemini with model: {model_name}")
                         break
                     except Exception as e:
+                        print(f"✗ Failed: {e}")
                         last_error = e
                         continue
 
@@ -116,8 +118,19 @@ class VisitImageParser:
             Extract every visit you can identify. If handwriting is unclear, make your best guess.
             """
 
-            print("Parsing image with Gemini Vision AI...")
-            response = self.model.generate_content([prompt, img])
+            print(f"Parsing image with Gemini Vision AI using model: {self.model._model_name}...")
+
+            # Try to generate content with error handling for different API formats
+            try:
+                response = self.model.generate_content([prompt, img])
+            except Exception as api_error:
+                # If the error is about the model, try with just the image and prompt separately
+                print(f"First attempt failed: {api_error}")
+                print("Trying alternative API format...")
+                try:
+                    response = self.model.generate_content([img, prompt])
+                except Exception as api_error2:
+                    raise Exception(f"Both API formats failed. Error 1: {api_error}, Error 2: {api_error2}")
 
             if not response or not response.text:
                 result['error'] = 'Gemini returned no response.'
