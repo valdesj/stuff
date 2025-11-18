@@ -28,7 +28,7 @@ class VisitImageParser:
         if self.available:
             try:
                 genai.configure(api_key=api_key)
-                self.model = genai.GenerativeModel('gemini-1.5-flash')
+                self.model = genai.GenerativeModel('gemini-1.5-pro')
             except Exception as e:
                 print(f"Failed to initialize Gemini: {e}")
                 self.available = False
