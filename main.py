@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
 from tkcalendar import DateEntry
-from typing import Optional
+from typing import Optional, List, Dict
 from collections import defaultdict
 
 # Matplotlib imports (moved to module level for performance)
