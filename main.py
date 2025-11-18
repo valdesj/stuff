@@ -5,7 +5,7 @@ A desktop application for managing landscaping clients, visits, and costs.
 import customtkinter as ctk
 from database import Database
 from excel_importer import ExcelImporter
-from ocr_scanner import OCRScanner
+from gemini_vision import VisitImageParser
 from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
@@ -44,9 +44,9 @@ class LandscapingApp(ctk.CTk):
         except:
             ctk.set_default_color_theme("blue")
 
-        # Initialize importers (lazy load OCR scanner only when needed)
+        # Initialize importers (lazy load image parser only when needed)
         self.excel_importer = ExcelImporter(self.db)
-        self.ocr_scanner = None  # Lazy load when OCR tab is accessed
+        self.image_parser = None  # Lazy load when needed
 
         # Configure window
         self.title("Landscaping Client Tracker")
@@ -152,17 +152,14 @@ class LandscapingApp(ctk.CTk):
             print(f"Could not set application icon: {e}")
             # Don't crash if icon setting fails
 
-    def get_ocr_scanner(self):
-        """Get OCR scanner with lazy initialization."""
-        if self.ocr_scanner is None:
-            # Try to get Gemini API key from settings
+    def get_image_parser(self):
+        """Get image parser with lazy initialization."""
+        if self.image_parser is None:
             gemini_api_key = self.db.get_setting('gemini_api_key', '')
-
-            # Initialize OCR scanner with Gemini API key
-            self.ocr_scanner = OCRScanner(
-                gemini_api_key=gemini_api_key if gemini_api_key else None
+            self.image_parser = VisitImageParser(
+                api_key=gemini_api_key if gemini_api_key else None
             )
-        return self.ocr_scanner
+        return self.image_parser
 
     def on_tab_change(self):
         """Handle tab change for lazy loading optimization."""
@@ -2878,8 +2875,8 @@ class LandscapingApp(ctk.CTk):
 
     def scan_visit_image(self):
         """Open file dialog to scan an image for visit data."""
-        # Get OCR scanner (lazy initialization)
-        ocr_scanner = self.get_ocr_scanner()
+        # Get image parser (lazy initialization)
+        parser = self.get_image_parser()
 
         # Open file dialog
         file_path = filedialog.askopenfilename(
@@ -2917,7 +2914,7 @@ class LandscapingApp(ctk.CTk):
 
         # Scan the image
         try:
-            result = ocr_scanner.scan_and_parse_visits(file_path)
+            result = parser.parse_image(file_path)
             progress_dialog.destroy()
 
             if not result['success']:
@@ -2947,7 +2944,7 @@ class LandscapingApp(ctk.CTk):
                 return
 
             # Show review dialog
-            self.show_scanned_visits_dialog(result['records'], result['text'], ocr_scanner)
+            self.show_scanned_visits_dialog(result['records'], parser)
 
         except Exception as e:
             progress_dialog.destroy()
@@ -2963,7 +2960,7 @@ class LandscapingApp(ctk.CTk):
             else:
                 messagebox.showerror("Error", f"Failed to scan image:\n{error_str}")
 
-    def show_scanned_visits_dialog(self, records: list, raw_text: str, ocr_scanner):
+    def show_scanned_visits_dialog(self, records: list, parser):
         """Show dialog to review and import scanned visit records."""
         dialog = ctk.CTkToplevel(self)
         dialog.title("Review Scanned Visits")
@@ -3069,7 +3066,7 @@ class LandscapingApp(ctk.CTk):
             scanned_client_name = record.get('client_name', '')
             matched_client = None
             if scanned_client_name:
-                matched_client = ocr_scanner.match_client_name(scanned_client_name, all_clients)
+                matched_client = parser.match_client_name(scanned_client_name, all_clients)
 
             client_names = [c['name'] for c in all_clients]
             client_var = tk.StringVar()
@@ -4453,17 +4450,17 @@ class LandscapingApp(ctk.CTk):
         )
         template_btn.grid(row=3, column=0, sticky="ew", padx=50, pady=10)
 
-        ocr_scanner = self.get_ocr_scanner()
-        ocr_state = "normal" if ocr_scanner.is_available() else "disabled"
-        ocr_text = "📷 Scan Paper Records" if ocr_scanner.is_available() else "📷 Scan Paper Records (Install pytesseract)"
+        parser = self.get_image_parser()
+        parser_state = "normal" if parser.is_available() else "disabled"
+        parser_text = "📷 Scan Paper Records" if parser.is_available() else "📷 Scan Paper Records (Configure Gemini API)"
 
         ocr_btn = ctk.CTkButton(
             self.tab_import,
-            text=ocr_text,
+            text=parser_text,
             command=self.scan_paper_records,
             font=ctk.CTkFont(size=16),
             height=50,
-            state=ocr_state
+            state=parser_state
         )
         ocr_btn.grid(row=4, column=0, sticky="ew", padx=50, pady=10)
 
@@ -4995,15 +4992,16 @@ OCR Scanning Instructions (To be implemented):
 
     def scan_paper_records(self):
         """Scan and import data from paper records."""
-        ocr_scanner = self.get_ocr_scanner()
+        parser = self.get_image_parser()
 
-        if not ocr_scanner.is_available():
+        if not parser.is_available():
             messagebox.showerror(
-                "OCR Not Available",
-                "OCR functionality requires pytesseract and tesseract-ocr to be installed.\n\n"
-                "Please install:\n"
-                "1. tesseract-ocr system package\n"
-                "2. pytesseract Python package (pip install pytesseract)"
+                "Gemini API Not Configured",
+                "Image scanning requires a Google Gemini API key.\n\n"
+                "Please:\n"
+                "1. Go to Settings tab\n"
+                "2. Add your Gemini API key\n"
+                "3. Get a free key at: https://aistudio.google.com/app/apikey"
             )
             return
 
@@ -5020,15 +5018,13 @@ OCR Scanning Instructions (To be implemented):
 
         all_records = []
 
-        # Scan all images
+        # Parse all images
         for file_path in file_paths:
-            text = ocr_scanner.scan_image(file_path)
-            if text:
-                records = ocr_scanner.parse_visit_records(text)
-                for record in records:
+            result = parser.parse_image(file_path)
+            if result['success']:
+                for record in result['records']:
                     record['source_file'] = file_path
-                    ocr_scanner.validate_and_calculate_duration(record)
-                all_records.extend(records)
+                all_records.extend(result['records'])
 
         if not all_records:
             messagebox.showwarning(
@@ -5466,8 +5462,8 @@ OCR Scanning Instructions (To be implemented):
                 # Save Gemini API key
                 gemini_key = gemini_entry.get().strip()
                 self.db.set_setting('gemini_api_key', gemini_key)
-                # Reset OCR scanner to pick up new API key
-                self.ocr_scanner = None
+                # Reset image parser to pick up new API key
+                self.image_parser = None
 
                 # Save working year
                 new_year = year_var.get()

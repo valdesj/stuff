@@ -192,7 +192,7 @@ To backup your data, simply copy `landscaping_tracker.db` to a safe location.
 - **CustomTkinter**: Modern UI framework
 - **SQLite**: Local database
 - **pandas**: Excel import/export
-- **pytesseract**: OCR scanning (optional)
+- **google-generativeai**: Gemini Vision API for image parsing
 - **Pillow**: Image processing
 
 ### Project Structure
@@ -202,7 +202,7 @@ stuff/
 ├── main.py                    # Main application entry point
 ├── database.py                # Database layer and models
 ├── excel_importer.py          # Excel import functionality
-├── ocr_scanner.py             # OCR scanning functionality
+├── gemini_vision.py           # Gemini Vision API for image parsing
 ├── requirements.txt           # Python dependencies
 ├── landscaping_tracker.db     # SQLite database (created on first run)
 └── README.md                  # This file
