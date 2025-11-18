@@ -29,33 +29,52 @@ class VisitImageParser:
             try:
                 genai.configure(api_key=api_key)
 
-                # Try different model names in order of preference
-                model_names = [
-                    'gemini-1.5-flash-latest',
-                    'gemini-1.5-pro-latest',
-                    'gemini-pro-vision',
-                    'gemini-1.5-flash',
-                    'gemini-1.5-pro',
-                    'models/gemini-1.5-flash-latest',
-                    'models/gemini-pro-vision'
-                ]
-
+                # First, try to list available models and find a vision-capable one
                 self.model = None
-                last_error = None
 
-                for model_name in model_names:
-                    try:
-                        print(f"Trying model: {model_name}...")
+                print("Discovering available Gemini models...")
+                try:
+                    available_models = []
+                    for model in genai.list_models():
+                        if 'generateContent' in model.supported_generation_methods:
+                            available_models.append(model.name)
+                            print(f"  Found: {model.name}")
+
+                    # Try to use the first available model
+                    if available_models:
+                        model_name = available_models[0]
+                        print(f"\nUsing model: {model_name}")
                         self.model = genai.GenerativeModel(model_name)
-                        print(f"[OK] Successfully initialized Gemini with model: {model_name}")
-                        break
-                    except Exception as e:
-                        print(f"[FAIL] {e}")
-                        last_error = e
-                        continue
+                        print(f"[OK] Successfully initialized Gemini")
+                    else:
+                        print("No models found with generateContent support")
+                        self.available = False
+
+                except Exception as list_error:
+                    print(f"Could not list models: {list_error}")
+                    print("Trying hardcoded model names as fallback...")
+
+                    # Fallback to trying hardcoded names
+                    model_names = [
+                        'gemini-1.5-flash-latest',
+                        'gemini-1.5-pro-latest',
+                        'gemini-pro-vision',
+                        'gemini-1.5-flash',
+                        'gemini-1.5-pro',
+                    ]
+
+                    for model_name in model_names:
+                        try:
+                            print(f"Trying model: {model_name}...")
+                            self.model = genai.GenerativeModel(model_name)
+                            print(f"[OK] Successfully initialized Gemini with model: {model_name}")
+                            break
+                        except Exception as e:
+                            print(f"[FAIL] {e}")
+                            continue
 
                 if self.model is None:
-                    print(f"Failed to initialize any Gemini model. Last error: {last_error}")
+                    print(f"Failed to initialize any Gemini model")
                     self.available = False
 
             except Exception as e:
