@@ -28,12 +28,27 @@ from scipy.interpolate import make_interp_spline
 ctk.set_appearance_mode("dark")  # Dark mode
 ctk.set_default_color_theme("blue")
 
+# Performance settings to reduce blur during scrolling
+# Set these before creating any widgets
+try:
+    # Disable DPI scaling to prevent blur
+    import ctypes
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)
+except:
+    # Not on Windows or doesn't support, ignore
+    pass
+
 
 class LandscapingApp(ctk.CTk):
     """Main application window for the Landscaping Client Tracker."""
 
     def __init__(self):
         super().__init__()
+
+        # Performance optimizations for smoother scrolling
+        # Disable scaling to prevent blur during scroll
+        ctk.set_widget_scaling(1.0)
+        ctk.set_window_scaling(1.0)
 
         # Initialize database
         self.db = Database()
@@ -55,6 +70,15 @@ class LandscapingApp(ctk.CTk):
 
         # Set application icon
         self.set_app_icon()
+
+        # Additional performance optimizations for smoother scrolling
+        try:
+            # Tkinter rendering optimizations
+            self.tk.call('tk', 'scaling', 1.0)
+            # Disable smooth scrolling effects that cause blur
+            self.option_add('*tearOff', False)
+        except:
+            pass
 
         # Configure grid
         self.grid_columnconfigure(0, weight=1)
