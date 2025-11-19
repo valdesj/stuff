@@ -530,12 +530,13 @@ class Database:
             List of visits with anomalous durations
         """
         cursor = self.connection.cursor()
-        # Get average duration per client
+        # Get average duration per client and total visit count
         cursor.execute("""
             WITH client_averages AS (
                 SELECT
                     client_id,
-                    AVG(duration_minutes) as avg_duration
+                    AVG(duration_minutes) as avg_duration,
+                    COUNT(*) as total_visits
                 FROM visits
                 GROUP BY client_id
                 HAVING COUNT(*) >= 2
@@ -544,6 +545,7 @@ class Database:
                 v.*,
                 c.name as client_name,
                 ca.avg_duration,
+                ca.total_visits,
                 (v.duration_minutes / ca.avg_duration * 100) as percent_of_avg
             FROM visits v
             JOIN clients c ON v.client_id = c.id
