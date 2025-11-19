@@ -170,7 +170,70 @@ class Database:
             )
         """)
 
+        # Contract item templates (reusable descriptions)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS contract_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                category TEXT,
+                default_pricing_type TEXT DEFAULT 'flat',
+                default_unit TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Contracts and bids
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS contracts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_id INTEGER NOT NULL,
+                contract_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                status TEXT DEFAULT 'draft',
+                version INTEGER DEFAULT 1,
+                parent_contract_id INTEGER,
+                created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                total_amount REAL DEFAULT 0.0,
+                payment_terms TEXT,
+                start_date TEXT,
+                end_date TEXT,
+                pdf_path TEXT,
+                notes TEXT,
+                FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+                FOREIGN KEY (parent_contract_id) REFERENCES contracts(id)
+            )
+        """)
+
+        # Contract line items
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS contract_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                contract_id INTEGER NOT NULL,
+                template_id INTEGER,
+                item_order INTEGER DEFAULT 0,
+                description TEXT NOT NULL,
+                custom_notes TEXT,
+                pricing_type TEXT NOT NULL,
+                quantity REAL DEFAULT 1.0,
+                unit TEXT,
+                unit_price REAL DEFAULT 0.0,
+                total REAL DEFAULT 0.0,
+                FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE,
+                FOREIGN KEY (template_id) REFERENCES contract_templates(id) ON DELETE SET NULL
+            )
+        """)
+
         self.connection.commit()
+
+        # Add client_type column if it doesn't exist
+        try:
+            cursor.execute("ALTER TABLE clients ADD COLUMN client_type TEXT DEFAULT 'active'")
+            self.connection.commit()
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
 
         # Create indexes for performance optimization
         self.create_indexes()
@@ -189,6 +252,12 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_client_materials_material_id ON client_materials(material_id)",
             "CREATE INDEX IF NOT EXISTS idx_clients_active ON clients(is_active)",
             "CREATE INDEX IF NOT EXISTS idx_clients_bill_to ON clients(bill_to)",
+            "CREATE INDEX IF NOT EXISTS idx_clients_type ON clients(client_type)",
+            "CREATE INDEX IF NOT EXISTS idx_contracts_client_id ON contracts(client_id)",
+            "CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status)",
+            "CREATE INDEX IF NOT EXISTS idx_contracts_type ON contracts(contract_type)",
+            "CREATE INDEX IF NOT EXISTS idx_contract_items_contract_id ON contract_items(contract_id)",
+            "CREATE INDEX IF NOT EXISTS idx_contract_items_order ON contract_items(contract_id, item_order)",
         ]
 
         for index_sql in indexes:
@@ -958,3 +1027,350 @@ class Database:
             })
 
         return results
+
+    # ==================== CONTRACT TEMPLATE OPERATIONS ====================
+
+    def add_contract_template(self, name: str, description: str, category: str = "",
+                             default_pricing_type: str = "flat", default_unit: str = "") -> int:
+        """Add a new contract item template."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT INTO contract_templates (name, description, category, default_pricing_type, default_unit)
+            VALUES (?, ?, ?, ?, ?)
+        """, (name, description, category, default_pricing_type, default_unit))
+        self.connection.commit()
+        return cursor.lastrowid
+
+    def get_all_contract_templates(self, category: str = None) -> List[Dict]:
+        """Get all contract templates, optionally filtered by category."""
+        cursor = self.connection.cursor()
+        if category:
+            cursor.execute("""
+                SELECT * FROM contract_templates
+                WHERE category = ?
+                ORDER BY name
+            """, (category,))
+        else:
+            cursor.execute("SELECT * FROM contract_templates ORDER BY name")
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_contract_template(self, template_id: int) -> Optional[Dict]:
+        """Get a specific contract template by ID."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT * FROM contract_templates WHERE id = ?", (template_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def update_contract_template(self, template_id: int, **kwargs):
+        """Update a contract template."""
+        allowed_fields = ['name', 'description', 'category', 'default_pricing_type', 'default_unit']
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+
+        if not updates:
+            return
+
+        set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
+        values = list(updates.values()) + [template_id]
+
+        cursor = self.connection.cursor()
+        cursor.execute(f"UPDATE contract_templates SET {set_clause} WHERE id = ?", values)
+        self.connection.commit()
+
+    def delete_contract_template(self, template_id: int):
+        """Delete a contract template."""
+        cursor = self.connection.cursor()
+        cursor.execute("DELETE FROM contract_templates WHERE id = ?", (template_id,))
+        self.connection.commit()
+
+    def get_template_categories(self) -> List[str]:
+        """Get all unique template categories."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT DISTINCT category FROM contract_templates WHERE category != '' ORDER BY category")
+        return [row[0] for row in cursor.fetchall()]
+
+    # ==================== CONTRACT OPERATIONS ====================
+
+    def create_contract(self, client_id: int, contract_type: str, title: str,
+                       status: str = "draft", payment_terms: str = "",
+                       start_date: str = "", end_date: str = "", notes: str = "") -> int:
+        """Create a new contract."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT INTO contracts (client_id, contract_type, title, status, payment_terms,
+                                 start_date, end_date, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (client_id, contract_type, title, status, payment_terms, start_date, end_date, notes))
+        self.connection.commit()
+        return cursor.lastrowid
+
+    def get_contract(self, contract_id: int) -> Optional[Dict]:
+        """Get a specific contract by ID."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT c.*, cl.name as client_name
+            FROM contracts c
+            JOIN clients cl ON c.client_id = cl.id
+            WHERE c.id = ?
+        """, (contract_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def get_client_contracts(self, client_id: int, include_versions: bool = False) -> List[Dict]:
+        """Get all contracts for a client."""
+        cursor = self.connection.cursor()
+        if include_versions:
+            cursor.execute("""
+                SELECT * FROM contracts
+                WHERE client_id = ?
+                ORDER BY created_date DESC, version DESC
+            """, (client_id,))
+        else:
+            cursor.execute("""
+                SELECT * FROM contracts
+                WHERE client_id = ? AND parent_contract_id IS NULL
+                ORDER BY created_date DESC
+            """, (client_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_all_contracts(self, status: str = None, contract_type: str = None) -> List[Dict]:
+        """Get all contracts with optional filters."""
+        cursor = self.connection.cursor()
+        query = """
+            SELECT c.*, cl.name as client_name
+            FROM contracts c
+            JOIN clients cl ON c.client_id = cl.id
+            WHERE c.parent_contract_id IS NULL
+        """
+        params = []
+
+        if status:
+            query += " AND c.status = ?"
+            params.append(status)
+        if contract_type:
+            query += " AND c.contract_type = ?"
+            params.append(contract_type)
+
+        query += " ORDER BY c.created_date DESC"
+
+        cursor.execute(query, params)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def update_contract(self, contract_id: int, **kwargs):
+        """Update a contract."""
+        allowed_fields = ['title', 'status', 'payment_terms', 'start_date', 'end_date',
+                         'total_amount', 'pdf_path', 'notes']
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+
+        if not updates:
+            return
+
+        updates['updated_date'] = datetime.now().isoformat()
+
+        set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
+        values = list(updates.values()) + [contract_id]
+
+        cursor = self.connection.cursor()
+        cursor.execute(f"UPDATE contracts SET {set_clause} WHERE id = ?", values)
+        self.connection.commit()
+
+    def create_contract_version(self, original_contract_id: int) -> int:
+        """Create a new version of an existing contract."""
+        # Get the original contract
+        original = self.get_contract(original_contract_id)
+        if not original:
+            raise ValueError("Original contract not found")
+
+        # Get the highest version number
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT MAX(version) FROM contracts
+            WHERE id = ? OR parent_contract_id = ?
+        """, (original_contract_id, original_contract_id))
+        max_version = cursor.fetchone()[0] or original['version']
+        new_version = max_version + 1
+
+        # Create new contract version
+        cursor.execute("""
+            INSERT INTO contracts (client_id, contract_type, title, status, version,
+                                 parent_contract_id, payment_terms, start_date, end_date,
+                                 notes)
+            VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)
+        """, (original['client_id'], original['contract_type'], original['title'],
+              new_version, original_contract_id, original['payment_terms'],
+              original['start_date'], original['end_date'], original['notes']))
+
+        new_contract_id = cursor.lastrowid
+
+        # Copy all items from original
+        cursor.execute("""
+            INSERT INTO contract_items (contract_id, template_id, item_order, description,
+                                       custom_notes, pricing_type, quantity, unit, unit_price, total)
+            SELECT ?, template_id, item_order, description, custom_notes, pricing_type,
+                   quantity, unit, unit_price, total
+            FROM contract_items
+            WHERE contract_id = ?
+        """, (new_contract_id, original_contract_id))
+
+        self.connection.commit()
+        return new_contract_id
+
+    def get_contract_versions(self, contract_id: int) -> List[Dict]:
+        """Get all versions of a contract."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT * FROM contracts
+            WHERE id = ? OR parent_contract_id = ?
+            ORDER BY version ASC
+        """, (contract_id, contract_id))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def delete_contract(self, contract_id: int):
+        """Delete a contract and all its items."""
+        cursor = self.connection.cursor()
+        cursor.execute("DELETE FROM contracts WHERE id = ?", (contract_id,))
+        self.connection.commit()
+
+    # ==================== CONTRACT ITEM OPERATIONS ====================
+
+    def add_contract_item(self, contract_id: int, description: str, pricing_type: str,
+                         quantity: float = 1.0, unit_price: float = 0.0, unit: str = "",
+                         custom_notes: str = "", template_id: int = None,
+                         item_order: int = None) -> int:
+        """Add an item to a contract."""
+        # Calculate total
+        total = quantity * unit_price
+
+        # Get next order if not specified
+        if item_order is None:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT COALESCE(MAX(item_order), -1) + 1
+                FROM contract_items
+                WHERE contract_id = ?
+            """, (contract_id,))
+            item_order = cursor.fetchone()[0]
+
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT INTO contract_items (contract_id, template_id, item_order, description,
+                                      custom_notes, pricing_type, quantity, unit, unit_price, total)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (contract_id, template_id, item_order, description, custom_notes,
+              pricing_type, quantity, unit, unit_price, total))
+
+        item_id = cursor.lastrowid
+
+        # Update contract total
+        self._update_contract_total(contract_id)
+
+        self.connection.commit()
+        return item_id
+
+    def get_contract_items(self, contract_id: int) -> List[Dict]:
+        """Get all items for a contract in order."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT ci.*, ct.name as template_name
+            FROM contract_items ci
+            LEFT JOIN contract_templates ct ON ci.template_id = ct.id
+            WHERE ci.contract_id = ?
+            ORDER BY ci.item_order
+        """, (contract_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def update_contract_item(self, item_id: int, **kwargs):
+        """Update a contract item."""
+        allowed_fields = ['description', 'custom_notes', 'pricing_type', 'quantity',
+                         'unit', 'unit_price', 'item_order']
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+
+        if not updates:
+            return
+
+        # Recalculate total if quantity or unit_price changed
+        if 'quantity' in updates or 'unit_price' in updates:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT quantity, unit_price FROM contract_items WHERE id = ?", (item_id,))
+            row = cursor.fetchone()
+            current_qty = updates.get('quantity', row[0])
+            current_price = updates.get('unit_price', row[1])
+            updates['total'] = current_qty * current_price
+
+        set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
+        values = list(updates.values()) + [item_id]
+
+        cursor = self.connection.cursor()
+        cursor.execute(f"UPDATE contract_items SET {set_clause} WHERE id = ?", values)
+
+        # Get contract_id and update total
+        cursor.execute("SELECT contract_id FROM contract_items WHERE id = ?", (item_id,))
+        contract_id = cursor.fetchone()[0]
+        self._update_contract_total(contract_id)
+
+        self.connection.commit()
+
+    def delete_contract_item(self, item_id: int):
+        """Delete a contract item."""
+        cursor = self.connection.cursor()
+
+        # Get contract_id before deleting
+        cursor.execute("SELECT contract_id FROM contract_items WHERE id = ?", (item_id,))
+        row = cursor.fetchone()
+        if row:
+            contract_id = row[0]
+            cursor.execute("DELETE FROM contract_items WHERE id = ?", (item_id,))
+            self._update_contract_total(contract_id)
+            self.connection.commit()
+
+    def reorder_contract_items(self, contract_id: int, item_ids_in_order: List[int]):
+        """Reorder contract items."""
+        cursor = self.connection.cursor()
+        for order, item_id in enumerate(item_ids_in_order):
+            cursor.execute("""
+                UPDATE contract_items
+                SET item_order = ?
+                WHERE id = ? AND contract_id = ?
+            """, (order, item_id, contract_id))
+        self.connection.commit()
+
+    def _update_contract_total(self, contract_id: int):
+        """Recalculate and update the contract total amount."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT COALESCE(SUM(total), 0)
+            FROM contract_items
+            WHERE contract_id = ?
+        """, (contract_id,))
+        total = cursor.fetchone()[0]
+
+        cursor.execute("""
+            UPDATE contracts
+            SET total_amount = ?, updated_date = ?
+            WHERE id = ?
+        """, (total, datetime.now().isoformat(), contract_id))
+
+    # ==================== CLIENT TYPE OPERATIONS ====================
+
+    def update_client_type(self, client_id: int, client_type: str):
+        """Update a client's type (active, seasonal, project, inactive)."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            UPDATE clients
+            SET client_type = ?
+            WHERE id = ?
+        """, (client_type, client_id))
+        self.connection.commit()
+
+    def get_clients_by_type(self, client_type: str, active_only: bool = True) -> List[Dict]:
+        """Get all clients of a specific type."""
+        cursor = self.connection.cursor()
+        query = "SELECT * FROM clients WHERE client_type = ?"
+        params = [client_type]
+
+        if active_only:
+            query += " AND is_active = 1"
+
+        query += " ORDER BY name"
+
+        cursor.execute(query, params)
+        return [dict(row) for row in cursor.fetchall()]
