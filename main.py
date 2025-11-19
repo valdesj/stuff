@@ -3321,7 +3321,8 @@ The upload page works on any device with a camera!""")
             qr_img = qr_img.resize((300, 300), Image.Resampling.LANCZOS)
             qr_photo = ImageTk.PhotoImage(qr_img)
 
-            qr_label = tk.Label(dialog, image=qr_photo, bg=dialog._fg_color)
+            # Use CTkLabel to avoid color issues
+            qr_label = ctk.CTkLabel(dialog, image=qr_photo, text="")
             qr_label.image = qr_photo  # Keep reference
             qr_label.pack(pady=20)
 
