@@ -40,6 +40,121 @@ except:
     pass
 
 
+class SplashScreen(ctk.CTkToplevel):
+    """Splash screen displayed during application launch."""
+
+    def __init__(self):
+        super().__init__()
+
+        # Configure splash window
+        self.title("")
+        self.overrideredirect(True)  # Remove window decorations
+
+        # Make window transparent/frameless
+        self.attributes('-topmost', True)
+
+        # Get screen dimensions
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+
+        # Set splash size
+        splash_width = 400
+        splash_height = 400
+
+        # Calculate position to center
+        x = (screen_width - splash_width) // 2
+        y = (screen_height - splash_height) // 2
+
+        self.geometry(f"{splash_width}x{splash_height}+{x}+{y}")
+
+        # Try to load and display logo
+        import os
+        from PIL import Image, ImageTk
+
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        logo_path = os.path.join(script_dir, 'mJorgesLogo.png')
+
+        if os.path.exists(logo_path):
+            try:
+                # Load image with PIL to preserve transparency
+                pil_image = Image.open(logo_path)
+
+                # Remove white background by making it transparent
+                if pil_image.mode != 'RGBA':
+                    pil_image = pil_image.convert('RGBA')
+
+                # Get image data
+                data = pil_image.getdata()
+                new_data = []
+
+                # Replace white/near-white pixels with transparent
+                for item in data:
+                    # Check if pixel is white or near-white (RGB values all > 240)
+                    if item[0] > 240 and item[1] > 240 and item[2] > 240:
+                        # Make it transparent
+                        new_data.append((255, 255, 255, 0))
+                    else:
+                        new_data.append(item)
+
+                pil_image.putdata(new_data)
+
+                # Resize if needed (maintain aspect ratio)
+                max_size = 350
+                pil_image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+
+                # Convert to PhotoImage
+                self.logo_image = ImageTk.PhotoImage(pil_image)
+
+                # Display logo with transparent background
+                logo_label = ctk.CTkLabel(
+                    self,
+                    image=self.logo_image,
+                    text=""
+                )
+                logo_label.pack(expand=True, pady=20)
+
+            except Exception as e:
+                print(f"Error loading splash logo: {e}")
+                # Fallback to text
+                self._show_text_splash()
+        else:
+            # Logo not found, show text splash
+            self._show_text_splash()
+
+        # Loading text
+        loading_label = ctk.CTkLabel(
+            self,
+            text="Loading Landscaping Client Tracker...",
+            font=ctk.CTkFont(size=14)
+        )
+        loading_label.pack(pady=10)
+
+        # Progress indicator
+        self.progress = ctk.CTkProgressBar(self, width=300, mode="indeterminate")
+        self.progress.pack(pady=10)
+        self.progress.start()
+
+        self.update()
+
+    def _show_text_splash(self):
+        """Show text-based splash if logo is not available."""
+        title_label = ctk.CTkLabel(
+            self,
+            text="🌿 Landscaping Client Tracker",
+            font=ctk.CTkFont(size=24, weight="bold"),
+            text_color=("#2e7d32", "#4caf50")
+        )
+        title_label.pack(expand=True, pady=50)
+
+    def close(self):
+        """Close the splash screen."""
+        try:
+            self.progress.stop()
+        except:
+            pass
+        self.destroy()
+
+
 class LandscapingApp(ctk.CTk):
     """Main application window for the Landscaping Client Tracker."""
 
@@ -7694,6 +7809,27 @@ Note: Requires Gemini API key (configure in Settings)
 
 
 if __name__ == "__main__":
+    # Create a hidden root window for the splash screen
+    root = ctk.CTk()
+    root.withdraw()  # Hide the root window
+
+    # Show splash screen
+    splash = SplashScreen()
+    splash.update()
+
+    # Small delay to ensure splash is visible
+    root.after(100)
+    root.update()
+
+    # Create main application
     app = LandscapingApp()
     app.protocol("WM_DELETE_WINDOW", app.on_closing)
+
+    # Close splash screen
+    splash.close()
+
+    # Destroy the hidden root
+    root.destroy()
+
+    # Start main application
     app.mainloop()
