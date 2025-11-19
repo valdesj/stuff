@@ -27,9 +27,42 @@ class Database:
         if self.connection:
             self.connection.close()
 
+    def _migrate_database(self, cursor):
+        """Migrate existing databases to add new columns."""
+        try:
+            # Check if clients table exists
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='clients'")
+            if cursor.fetchone():
+                # Table exists, check for new columns and add if missing
+                cursor.execute("PRAGMA table_info(clients)")
+                columns = [col[1] for col in cursor.fetchall()]
+
+                if 'bill_to' not in columns:
+                    cursor.execute("ALTER TABLE clients ADD COLUMN bill_to TEXT")
+
+                if 'no_additional_services' not in columns:
+                    cursor.execute("ALTER TABLE clients ADD COLUMN no_additional_services INTEGER NOT NULL DEFAULT 0")
+
+            # Check if visits table exists and add needs_review column
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='visits'")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(visits)")
+                columns = [col[1] for col in cursor.fetchall()]
+
+                if 'needs_review' not in columns:
+                    cursor.execute("ALTER TABLE visits ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0")
+
+            self.connection.commit()
+        except Exception as e:
+            print(f"Migration warning: {e}")
+            # Don't fail on migration errors
+
     def create_tables(self):
         """Create all necessary tables if they don't exist."""
         cursor = self.connection.cursor()
+
+        # Migrate existing databases - add new columns if they don't exist
+        self._migrate_database(cursor)
 
         # Clients table
         cursor.execute("""
@@ -42,7 +75,9 @@ class Database:
                 monthly_charge REAL NOT NULL DEFAULT 0.0,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                notes TEXT
+                notes TEXT,
+                bill_to TEXT,
+                no_additional_services INTEGER NOT NULL DEFAULT 0
             )
         """)
 
@@ -83,6 +118,7 @@ class Database:
                 duration_minutes REAL NOT NULL,
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                needs_review INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
             )
         """)
@@ -108,24 +144,35 @@ class Database:
             )
         """)
 
+        # Client groups table for group contact information
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS client_groups (
+                bill_to TEXT PRIMARY KEY,
+                email TEXT,
+                phone TEXT,
+                address TEXT,
+                notes TEXT
+            )
+        """)
+
         self.connection.commit()
 
     # ==================== CLIENT OPERATIONS ====================
 
     def add_client(self, name: str, monthly_charge: float, email: str = "",
-                   phone: str = "", address: str = "", notes: str = "") -> int:
+                   phone: str = "", address: str = "", notes: str = "", bill_to: str = "") -> int:
         """Add a new client and return their ID."""
         cursor = self.connection.cursor()
         cursor.execute("""
-            INSERT INTO clients (name, email, phone, address, monthly_charge, notes)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (name, email, phone, address, monthly_charge, notes))
+            INSERT INTO clients (name, email, phone, address, monthly_charge, notes, bill_to)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (name, email, phone, address, monthly_charge, notes, bill_to))
         self.connection.commit()
         return cursor.lastrowid
 
     def update_client(self, client_id: int, **kwargs):
         """Update client information."""
-        allowed_fields = ['name', 'email', 'phone', 'address', 'monthly_charge', 'notes']
+        allowed_fields = ['name', 'email', 'phone', 'address', 'monthly_charge', 'notes', 'bill_to']
         updates = []
         values = []
 
@@ -427,3 +474,189 @@ class Database:
             VALUES (?, ?)
         """, (key, value))
         self.connection.commit()
+
+    # ==================== VISIT QUERY OPERATIONS ====================
+
+    def get_visits_by_date(self, date: str, active_only: bool = True) -> List[Dict]:
+        """
+        Get all visits for a specific date.
+
+        Args:
+            date: Date in YYYY-MM-DD format
+            active_only: Only return visits for active clients
+
+        Returns:
+            List of visit records with client information
+        """
+        cursor = self.connection.cursor()
+        if active_only:
+            cursor.execute("""
+                SELECT v.*, c.name as client_name
+                FROM visits v
+                JOIN clients c ON v.client_id = c.id
+                WHERE v.visit_date = ? AND c.is_active = 1
+                ORDER BY v.start_time
+            """, (date,))
+        else:
+            cursor.execute("""
+                SELECT v.*, c.name as client_name
+                FROM visits v
+                JOIN clients c ON v.client_id = c.id
+                WHERE v.visit_date = ?
+                ORDER BY v.start_time
+            """, (date,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_visits_needing_review(self) -> List[Dict]:
+        """Get all visits that need review."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT v.*, c.name as client_name
+            FROM visits v
+            JOIN clients c ON v.client_id = c.id
+            WHERE v.needs_review = 1
+            ORDER BY v.visit_date DESC
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_visits_with_anomalous_durations(self, threshold_percent: float = 300.0) -> List[Dict]:
+        """
+        Get visits with unusually long durations.
+
+        Args:
+            threshold_percent: Percentage threshold (e.g., 300 means 3x the average)
+
+        Returns:
+            List of visits with anomalous durations
+        """
+        cursor = self.connection.cursor()
+        # Get average duration per client
+        cursor.execute("""
+            WITH client_averages AS (
+                SELECT
+                    client_id,
+                    AVG(duration_minutes) as avg_duration
+                FROM visits
+                GROUP BY client_id
+                HAVING COUNT(*) >= 2
+            )
+            SELECT
+                v.*,
+                c.name as client_name,
+                ca.avg_duration,
+                (v.duration_minutes / ca.avg_duration * 100) as duration_percent
+            FROM visits v
+            JOIN clients c ON v.client_id = c.id
+            JOIN client_averages ca ON v.client_id = ca.client_id
+            WHERE v.duration_minutes > (ca.avg_duration * ?)
+            ORDER BY duration_percent DESC
+        """, (threshold_percent / 100,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    # ==================== CLIENT GROUP OPERATIONS ====================
+
+    def get_all_client_groups(self) -> List[str]:
+        """Get all unique bill_to group names."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT DISTINCT bill_to
+            FROM clients
+            WHERE bill_to IS NOT NULL AND bill_to != ''
+            ORDER BY bill_to
+        """)
+        return [row['bill_to'] for row in cursor.fetchall()]
+
+    def get_group_info(self, bill_to: str) -> Optional[Dict]:
+        """Get group contact information."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT * FROM client_groups WHERE bill_to = ?
+        """, (bill_to,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def get_clients_in_group(self, bill_to: str) -> List[Dict]:
+        """Get all clients in a billing group."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT * FROM clients
+            WHERE bill_to = ?
+            ORDER BY name
+        """, (bill_to,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def save_group_info(self, bill_to: str, email: str = "", phone: str = "",
+                       address: str = "", notes: str = ""):
+        """Save or update group contact information."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO client_groups (bill_to, email, phone, address, notes)
+            VALUES (?, ?, ?, ?, ?)
+        """, (bill_to, email, phone, address, notes))
+        self.connection.commit()
+
+    def get_client_by_name(self, name: str) -> Optional[Dict]:
+        """Get a client by exact name match."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT * FROM clients WHERE name = ?", (name,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    # ==================== CLIENT HELPER OPERATIONS ====================
+
+    def get_client_no_additional_services(self, client_id: int) -> bool:
+        """Check if client is marked as not needing additional services."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT no_additional_services FROM clients WHERE id = ?
+        """, (client_id,))
+        row = cursor.fetchone()
+        return bool(row['no_additional_services']) if row else False
+
+    def set_client_no_additional_services(self, client_id: int, value: bool):
+        """Set whether client needs additional services."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            UPDATE clients SET no_additional_services = ? WHERE id = ?
+        """, (1 if value else 0, client_id))
+        self.connection.commit()
+
+    def get_clients_missing_services_materials(self) -> List[Dict]:
+        """Get clients that have no associated materials/services."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT c.*
+            FROM clients c
+            LEFT JOIN client_materials cm ON c.id = cm.client_id
+            WHERE c.is_active = 1
+            AND cm.id IS NULL
+            AND c.no_additional_services = 0
+            ORDER BY c.name
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_clients_missing_contact_info(self) -> List[Dict]:
+        """Get clients missing email or phone contact information."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT *
+            FROM clients
+            WHERE is_active = 1
+            AND (email IS NULL OR email = '' OR phone IS NULL OR phone = '')
+            ORDER BY name
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+    # ==================== HOURLY RATE OPERATIONS ====================
+
+    def get_hourly_rate(self) -> float:
+        """Get the hourly rate from settings."""
+        rate_str = self.get_setting('hourly_rate', '50.0')
+        try:
+            return float(rate_str)
+        except ValueError:
+            return 50.0
+
+    def set_hourly_rate(self, rate: float):
+        """Set the hourly rate in settings."""
+        self.set_setting('hourly_rate', str(rate))
