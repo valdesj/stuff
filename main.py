@@ -40,7 +40,7 @@ except:
     pass
 
 
-class SplashScreen(ctk.CTkToplevel):
+class SplashScreen(ctk.CTk):
     """Splash screen displayed during application launch."""
 
     def __init__(self):
@@ -50,7 +50,7 @@ class SplashScreen(ctk.CTkToplevel):
         self.title("")
         self.overrideredirect(True)  # Remove window decorations
 
-        # Make window transparent/frameless
+        # Make window stay on top
         self.attributes('-topmost', True)
 
         # Get screen dimensions
@@ -146,7 +146,7 @@ class SplashScreen(ctk.CTkToplevel):
         )
         title_label.pack(expand=True, pady=50)
 
-    def close(self):
+    def finish(self):
         """Close the splash screen."""
         try:
             self.progress.stop()
@@ -7809,27 +7809,21 @@ Note: Requires Gemini API key (configure in Settings)
 
 
 if __name__ == "__main__":
-    # Create a hidden root window for the splash screen
-    root = ctk.CTk()
-    root.withdraw()  # Hide the root window
-
     # Show splash screen
     splash = SplashScreen()
-    splash.update()
 
-    # Small delay to ensure splash is visible
-    root.after(100)
-    root.update()
+    def start_main_app():
+        """Initialize and start the main application."""
+        # Close splash screen
+        splash.finish()
 
-    # Create main application
-    app = LandscapingApp()
-    app.protocol("WM_DELETE_WINDOW", app.on_closing)
+        # Create and start main application
+        app = LandscapingApp()
+        app.protocol("WM_DELETE_WINDOW", app.on_closing)
+        app.mainloop()
 
-    # Close splash screen
-    splash.close()
+    # Schedule main app to start after a brief delay (allowing splash to display)
+    splash.after(800, start_main_app)
 
-    # Destroy the hidden root
-    root.destroy()
-
-    # Start main application
-    app.mainloop()
+    # Start the splash screen event loop
+    splash.mainloop()
