@@ -544,12 +544,12 @@ class Database:
                 v.*,
                 c.name as client_name,
                 ca.avg_duration,
-                (v.duration_minutes / ca.avg_duration * 100) as duration_percent
+                (v.duration_minutes / ca.avg_duration * 100) as percent_of_avg
             FROM visits v
             JOIN clients c ON v.client_id = c.id
             JOIN client_averages ca ON v.client_id = ca.client_id
             WHERE v.duration_minutes > (ca.avg_duration * ?)
-            ORDER BY duration_percent DESC
+            ORDER BY percent_of_avg DESC
         """, (threshold_percent / 100,))
         return [dict(row) for row in cursor.fetchall()]
 
