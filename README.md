@@ -34,7 +34,7 @@ A modern desktop application for managing landscaping clients, tracking visits, 
 ### 📥 Data Import
 - **Excel Import**: Import clients, materials, and visits from Excel files
 - **Excel Template**: Download a pre-formatted template for easy data entry
-- **OCR Scanning**: Scan paper records and import visit data (requires pytesseract)
+- **Image Scanning**: Scan paper records and import visit data using Gemini AI (requires API key)
 - Verification interface for reviewing scanned data before import
 
 ### 💰 Cost Analytics
@@ -64,22 +64,17 @@ cd stuff
 pip install -r requirements.txt
 ```
 
-### Step 3: (Optional) Install OCR Support
+### Step 3: (Optional) Configure Gemini AI for Image Scanning
 
-For paper scanning functionality, install tesseract-ocr:
+For paper scanning functionality:
 
-**Ubuntu/Debian:**
-```bash
-sudo apt-get install tesseract-ocr
-```
+1. Get a free API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
+2. Launch the application
+3. Go to Settings tab
+4. Enter your Gemini API key
+5. Use the "Scan Image" button in the Visits tab
 
-**macOS:**
-```bash
-brew install tesseract
-```
-
-**Windows:**
-Download and install from: https://github.com/UB-Mannheim/tesseract/wiki
+**Note:** Gemini AI free tier provides 15 requests/minute, which is sufficient for most users.
 
 ## Usage
 
@@ -133,14 +128,15 @@ python main.py
 7. Select your filled template
 8. Review import results
 
-#### From Paper Records (OCR):
+#### From Paper Records (Image Scanning):
 
-1. Take clear photos or scans of your paper records
-2. Navigate to the "Import Data" tab
-3. Click "📷 Scan Paper Records"
-4. Select one or more image files
-5. Review and edit the detected data
-6. Click "Save All Records"
+1. Configure your Gemini API key in Settings (one-time setup)
+2. Take clear photos or scans of your paper records
+3. Navigate to the "Visits" tab
+4. Click "📷 Scan Image"
+5. Select one or more image files
+6. Review and edit the data extracted by Gemini AI
+7. Click "Save All Records"
 
 ### Understanding the Dashboard
 
@@ -224,9 +220,11 @@ The application is designed with larger fonts and clear buttons for easy use:
 - Ensure Python 3.8+ is installed: `python --version`
 - Install all dependencies: `pip install -r requirements.txt`
 
-### OCR scanning not available
-- Install tesseract-ocr system package
-- Verify pytesseract is installed: `pip install pytesseract`
+### Image scanning not working
+- Get a free Gemini API key from https://aistudio.google.com/app/apikey
+- Add the API key in Settings tab
+- Ensure images are clear and contain legible visit data
+- Check internet connection (Gemini API requires online access)
 
 ### Import errors from Excel
 - Ensure Excel file has the correct sheet names: "Clients", "Materials", "Visits"

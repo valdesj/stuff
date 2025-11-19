@@ -3141,7 +3141,7 @@ class LandscapingApp(ctk.CTk):
             hover_color="darkgray"
         ).pack(pady=10)
 
-    # ==================== OCR IMAGE SCANNING ====================
+    # ==================== IMAGE SCANNING ====================
 
     def scan_visit_image(self):
         """Open file dialog to scan an image for visit data."""
@@ -4818,7 +4818,7 @@ class LandscapingApp(ctk.CTk):
 
         desc = ctk.CTkLabel(
             self.tab_import,
-            text="Import client and visit data from Excel files.\nComing soon: OCR scanning from paper records.",
+            text="Import client and visit data from Excel files.\nUse 'Scan Image' button in Visits tab to import from paper records.",
             font=ctk.CTkFont(size=11),
             text_color="gray"
         )
@@ -4865,12 +4865,15 @@ For Visits Sheet:
 - End Time (HH:MM)
 - Notes
 
-OCR Scanning Instructions (To be implemented):
+Image Scanning Instructions:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Take clear photos of your paper records
-2. Upload images through the scanner
-3. Review and correct any OCR errors
-4. Save verified data to the database
+1. Go to Visits tab and click "Scan Image" button
+2. Select clear photos of your paper records
+3. Gemini AI will extract visit data automatically
+4. Review and correct any extracted data
+5. Save verified data to the database
+
+Note: Requires Gemini API key (configure in Settings)
         """)
         instructions.configure(state="disabled")
 
@@ -5369,238 +5372,6 @@ OCR Scanning Instructions (To be implemented):
         # Refresh all views
         self.refresh_all()
 
-    def scan_paper_records(self):
-        """Scan and import data from paper records."""
-        parser = self.get_image_parser()
-
-        if not parser.is_available():
-            messagebox.showerror(
-                "Gemini API Not Configured",
-                "Image scanning requires a Google Gemini API key.\n\n"
-                "Please:\n"
-                "1. Go to Settings tab\n"
-                "2. Add your Gemini API key\n"
-                "3. Get a free key at: https://aistudio.google.com/app/apikey"
-            )
-            return
-
-        file_paths = filedialog.askopenfilenames(
-            title="Select images of paper records",
-            filetypes=[
-                ("Image files", "*.png *.jpg *.jpeg *.tiff *.bmp"),
-                ("All files", "*.*")
-            ]
-        )
-
-        if not file_paths:
-            return
-
-        all_records = []
-
-        # Parse all images
-        for file_path in file_paths:
-            result = parser.parse_image(file_path)
-            if result['success']:
-                for record in result['records']:
-                    record['source_file'] = file_path
-                all_records.extend(result['records'])
-
-        if not all_records:
-            messagebox.showwarning(
-                "No Records Found",
-                "Could not extract any visit records from the scanned images.\n\n"
-                "Please ensure the images are clear and contain visit information with dates and times."
-            )
-            return
-
-        # Show verification dialog
-        self.show_ocr_verification_dialog(all_records)
-
-    def show_ocr_verification_dialog(self, records: list):
-        """Show dialog for verifying and editing OCR-scanned records before import."""
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("Verify Scanned Records")
-        dialog.geometry("900x700")
-        dialog.transient(self)
-        dialog.grab_set()
-
-        # Center the dialog
-        dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (900 // 2)
-        y = (dialog.winfo_screenheight() // 2) - (700 // 2)
-        dialog.geometry(f"900x700+{x}+{y}")
-
-        header = ctk.CTkLabel(
-            dialog,
-            text=f"Found {len(records)} Records - Review and Edit Before Saving",
-            font=ctk.CTkFont(size=18, weight="bold")
-        )
-        header.pack(pady=20)
-
-        # Scrollable frame for records
-        scroll_frame = ctk.CTkScrollableFrame(dialog, height=500)
-        scroll_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-
-        # Get all clients for dropdown
-        all_clients = self.db.get_all_clients(active_only=True)
-        client_names = [c['name'] for c in all_clients]
-
-        record_widgets = []
-
-        for idx, record in enumerate(records):
-            # Frame for each record
-            record_frame = ctk.CTkFrame(scroll_frame, border_width=2)
-            record_frame.pack(fill="x", padx=10, pady=10)
-            record_frame.grid_columnconfigure(1, weight=1)
-
-            # Status indicator
-            is_valid = record.get('is_valid', True)
-            status_color = "green" if is_valid else "red"
-            status_text = "✓ Valid" if is_valid else "⚠ Needs Review"
-
-            status_label = ctk.CTkLabel(
-                record_frame,
-                text=status_text,
-                text_color=status_color,
-                font=ctk.CTkFont(size=12, weight="bold")
-            )
-            status_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 5))
-
-            # Input fields
-            row_num = 1
-
-            # Client selection
-            client_label = ctk.CTkLabel(record_frame, text="Client:", font=ctk.CTkFont(size=13))
-            client_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
-
-            client_var = tk.StringVar(value=record.get('client_name', 'Select...'))
-            client_menu = ctk.CTkOptionMenu(
-                record_frame,
-                values=client_names if client_names else ["No clients available"],
-                variable=client_var,
-                width=200
-            )
-            client_menu.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
-            row_num += 1
-
-            # Date
-            date_label = ctk.CTkLabel(record_frame, text="Date:", font=ctk.CTkFont(size=13))
-            date_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
-
-            date_entry = ctk.CTkEntry(record_frame, width=200)
-            date_entry.insert(0, record.get('date', ''))
-            date_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
-            row_num += 1
-
-            # Start time
-            start_label = ctk.CTkLabel(record_frame, text="Start Time:", font=ctk.CTkFont(size=13))
-            start_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
-
-            start_entry = ctk.CTkEntry(record_frame, width=200)
-            start_entry.insert(0, record.get('start_time', ''))
-            start_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
-            row_num += 1
-
-            # End time
-            end_label = ctk.CTkLabel(record_frame, text="End Time:", font=ctk.CTkFont(size=13))
-            end_label.grid(row=row_num, column=0, sticky="w", padx=10, pady=5)
-
-            end_entry = ctk.CTkEntry(record_frame, width=200)
-            end_entry.insert(0, record.get('end_time', ''))
-            end_entry.grid(row=row_num, column=1, sticky="w", padx=10, pady=5)
-            row_num += 1
-
-            # Source file
-            source_label = ctk.CTkLabel(
-                record_frame,
-                text=f"Source: {record.get('source_file', 'Unknown')}",
-                font=ctk.CTkFont(size=10),
-                text_color="gray"
-            )
-            source_label.grid(row=row_num, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
-
-            # Store widgets for later access
-            record_widgets.append({
-                'client_var': client_var,
-                'date_entry': date_entry,
-                'start_entry': start_entry,
-                'end_entry': end_entry,
-                'clients_map': {c['name']: c['id'] for c in all_clients}
-            })
-
-        def save_all_records():
-            saved_count = 0
-            errors = []
-
-            for idx, widgets in enumerate(record_widgets):
-                try:
-                    client_name = widgets['client_var'].get()
-                    client_id = widgets['clients_map'].get(client_name)
-
-                    if not client_id:
-                        errors.append(f"Record {idx+1}: Invalid client")
-                        continue
-
-                    date_str = widgets['date_entry'].get().strip()
-                    start_str = widgets['start_entry'].get().strip()
-                    end_str = widgets['end_entry'].get().strip()
-
-                    # Calculate duration
-                    start = datetime.strptime(start_str, '%H:%M')
-                    end = datetime.strptime(end_str, '%H:%M')
-                    duration = (end - start).total_seconds() / 60
-
-                    if duration <= 0:
-                        errors.append(f"Record {idx+1}: Invalid time range")
-                        continue
-
-                    self.db.add_visit(
-                        client_id=client_id,
-                        visit_date=date_str,
-                        start_time=start_str,
-                        end_time=end_str,
-                        duration_minutes=duration,
-                        notes="Imported from OCR scan"
-                    )
-                    saved_count += 1
-
-                except Exception as e:
-                    errors.append(f"Record {idx+1}: {str(e)}")
-
-            msg = f"Successfully saved {saved_count} out of {len(record_widgets)} records."
-            if errors:
-                msg += f"\n\nErrors:\n" + "\n".join(errors[:5])
-                if len(errors) > 5:
-                    msg += f"\n... and {len(errors) - 5} more errors"
-
-            messagebox.showinfo("Import Complete", msg)
-            dialog.destroy()
-            self.refresh_all()
-
-        # Buttons
-        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=20, pady=(0, 20))
-
-        save_btn = ctk.CTkButton(
-            btn_frame,
-            text="Save All Records",
-            command=save_all_records,
-            font=ctk.CTkFont(size=16),
-            height=45,
-            fg_color="green"
-        )
-        save_btn.pack(side=tk.LEFT, padx=5)
-
-        cancel_btn = ctk.CTkButton(
-            btn_frame,
-            text="Cancel",
-            command=dialog.destroy,
-            font=ctk.CTkFont(size=16),
-            height=45,
-            fg_color="red"
-        )
-        cancel_btn.pack(side=tk.LEFT, padx=5)
-
     # ==================== UTILITY METHODS ====================
 
     def format_time_12hr(self, time_str: str) -> str:
@@ -5724,7 +5495,7 @@ OCR Scanning Instructions (To be implemented):
         )
         pdf_help.pack(pady=(0, 8), padx=10)
 
-        # Gemini API Key Setting (for advanced OCR)
+        # Gemini API Key Setting (for image scanning)
         gemini_frame = ctk.CTkFrame(scroll_frame)
         gemini_frame.pack(pady=8, padx=10, fill="x")
 
@@ -5750,7 +5521,7 @@ OCR Scanning Instructions (To be implemented):
 
         gemini_help = ctk.CTkLabel(
             gemini_frame,
-            text="Gemini AI provides superior OCR for handwritten visit tables. Free tier: 15 requests/minute.\nGet your free API key: https://aistudio.google.com/app/apikey",
+            text="Gemini AI provides superior image recognition for handwritten visit tables. Free tier: 15 requests/minute.\nGet your free API key: https://aistudio.google.com/app/apikey",
             font=ctk.CTkFont(size=9),
             text_color="gray",
             wraplength=700,
