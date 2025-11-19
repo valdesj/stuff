@@ -124,6 +124,7 @@ class LandscapingApp(ctk.CTk):
         self.tab_daily = self.tabview.add("Daily Schedule")
         self.tab_todo = self.tabview.add("To-Do")
         self.tab_materials = self.tabview.add("Materials")
+        self.tab_contracts = self.tabview.add("Contracts")
         self.tab_import = self.tabview.add("Import Historical Data")
 
         # Initialize tabs
@@ -133,6 +134,7 @@ class LandscapingApp(ctk.CTk):
         self.init_daily_schedule_tab()
         self.init_todo_tab()
         self.init_materials_tab()
+        self.init_contracts_tab()
         self.init_import_tab()
 
         # Current selections
@@ -1944,9 +1946,277 @@ class LandscapingApp(ctk.CTk):
         self.contract_entries['status'] = status_var
         row += 1
 
-        # Continue building the contract interface...
-        # Items, Warranties, Terms sections will go here
-        # For now, let's add a save button
+        # Start Date
+        ctk.CTkLabel(info_frame, text="Start Date:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        start_date_entry = ctk.CTkEntry(info_frame, width=200, placeholder_text="YYYY-MM-DD")
+        start_date_entry.insert(0, contract['start_date'] or "")
+        start_date_entry.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        self.contract_entries['start_date'] = start_date_entry
+        row += 1
+
+        # End Date
+        ctk.CTkLabel(info_frame, text="End Date:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        end_date_entry = ctk.CTkEntry(info_frame, width=200, placeholder_text="YYYY-MM-DD")
+        end_date_entry.insert(0, contract['end_date'] or "")
+        end_date_entry.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        self.contract_entries['end_date'] = end_date_entry
+        row += 1
+
+        # Payment Terms
+        ctk.CTkLabel(info_frame, text="Payment Terms:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        payment_entry = ctk.CTkEntry(info_frame, width=300, placeholder_text="e.g., Net 30")
+        payment_entry.insert(0, contract['payment_terms'] or "")
+        payment_entry.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        self.contract_entries['payment_terms'] = payment_entry
+        row += 1
+
+        # Notes
+        ctk.CTkLabel(info_frame, text="Notes:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="nw", padx=10, pady=5)
+        notes_text = ctk.CTkTextbox(info_frame, width=400, height=80)
+        notes_text.insert("1.0", contract['notes'] or "")
+        notes_text.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        self.contract_entries['notes'] = notes_text
+        row += 1
+
+        # CONTRACT ITEMS SECTION
+        items_section_frame = ctk.CTkFrame(main_scroll)
+        items_section_frame.pack(fill="x", padx=10, pady=20)
+
+        items_header = ctk.CTkFrame(items_section_frame, fg_color="transparent")
+        items_header.pack(fill="x", padx=10, pady=5)
+
+        ctk.CTkLabel(
+            items_header,
+            text="Contract Items",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(side=tk.LEFT, padx=5)
+
+        ctk.CTkButton(
+            items_header,
+            text="+ Add from Template",
+            command=lambda: self.add_contract_item_from_template(contract_id, client_id, parent_frame),
+            width=150,
+            height=28
+        ).pack(side=tk.RIGHT, padx=5)
+
+        ctk.CTkButton(
+            items_header,
+            text="+ Add Custom Item",
+            command=lambda: self.add_custom_contract_item(contract_id, client_id, parent_frame),
+            width=150,
+            height=28
+        ).pack(side=tk.RIGHT, padx=5)
+
+        # Display existing items
+        items_list_frame = ctk.CTkFrame(items_section_frame)
+        items_list_frame.pack(fill="x", padx=10, pady=5)
+
+        items = self.db.get_contract_items(contract_id)
+        if items:
+            # Headers
+            headers_frame = ctk.CTkFrame(items_list_frame, fg_color="transparent")
+            headers_frame.pack(fill="x", pady=5)
+
+            ctk.CTkLabel(headers_frame, text="Description", font=ctk.CTkFont(size=11, weight="bold"), width=200).pack(side=tk.LEFT, padx=5)
+            ctk.CTkLabel(headers_frame, text="Type", font=ctk.CTkFont(size=11, weight="bold"), width=100).pack(side=tk.LEFT, padx=5)
+            ctk.CTkLabel(headers_frame, text="Qty", font=ctk.CTkFont(size=11, weight="bold"), width=60).pack(side=tk.LEFT, padx=5)
+            ctk.CTkLabel(headers_frame, text="Unit", font=ctk.CTkFont(size=11, weight="bold"), width=80).pack(side=tk.LEFT, padx=5)
+            ctk.CTkLabel(headers_frame, text="Unit Price", font=ctk.CTkFont(size=11, weight="bold"), width=80).pack(side=tk.LEFT, padx=5)
+            ctk.CTkLabel(headers_frame, text="Total", font=ctk.CTkFont(size=11, weight="bold"), width=80).pack(side=tk.LEFT, padx=5)
+            ctk.CTkLabel(headers_frame, text="Actions", font=ctk.CTkFont(size=11, weight="bold"), width=120).pack(side=tk.LEFT, padx=5)
+
+            # Item rows
+            total_contract_amount = 0
+            for item in items:
+                item_frame = ctk.CTkFrame(items_list_frame)
+                item_frame.pack(fill="x", pady=2)
+
+                desc = item['description'][:30] + "..." if len(item['description']) > 30 else item['description']
+                ctk.CTkLabel(item_frame, text=desc, width=200).pack(side=tk.LEFT, padx=5)
+                ctk.CTkLabel(item_frame, text=item['pricing_type'], width=100).pack(side=tk.LEFT, padx=5)
+                ctk.CTkLabel(item_frame, text=f"{item['quantity']:.2f}", width=60).pack(side=tk.LEFT, padx=5)
+                ctk.CTkLabel(item_frame, text=item['unit'] or "-", width=80).pack(side=tk.LEFT, padx=5)
+                ctk.CTkLabel(item_frame, text=f"${item['unit_price']:.2f}", width=80).pack(side=tk.LEFT, padx=5)
+                ctk.CTkLabel(item_frame, text=f"${item['total']:.2f}", width=80, font=ctk.CTkFont(weight="bold")).pack(side=tk.LEFT, padx=5)
+
+                btn_frame = ctk.CTkFrame(item_frame, fg_color="transparent")
+                btn_frame.pack(side=tk.LEFT, padx=5)
+
+                ctk.CTkButton(
+                    btn_frame,
+                    text="Edit",
+                    command=lambda i=item: self.edit_contract_item(i['id'], contract_id, client_id, parent_frame),
+                    width=50,
+                    height=24
+                ).pack(side=tk.LEFT, padx=2)
+
+                ctk.CTkButton(
+                    btn_frame,
+                    text="Delete",
+                    command=lambda i=item: self.delete_contract_item(i['id'], contract_id, client_id, parent_frame),
+                    width=50,
+                    height=24,
+                    fg_color="red",
+                    hover_color="darkred"
+                ).pack(side=tk.LEFT, padx=2)
+
+                total_contract_amount += item['total']
+
+            # Total row
+            total_frame = ctk.CTkFrame(items_list_frame, fg_color=("gray85", "gray25"))
+            total_frame.pack(fill="x", pady=5)
+            ctk.CTkLabel(total_frame, text="", width=200).pack(side=tk.LEFT, padx=5)
+            ctk.CTkLabel(total_frame, text="", width=100).pack(side=tk.LEFT, padx=5)
+            ctk.CTkLabel(total_frame, text="", width=60).pack(side=tk.LEFT, padx=5)
+            ctk.CTkLabel(total_frame, text="", width=80).pack(side=tk.LEFT, padx=5)
+            ctk.CTkLabel(total_frame, text="TOTAL:", width=80, font=ctk.CTkFont(weight="bold")).pack(side=tk.LEFT, padx=5)
+            ctk.CTkLabel(total_frame, text=f"${total_contract_amount:.2f}", width=80, font=ctk.CTkFont(size=14, weight="bold")).pack(side=tk.LEFT, padx=5)
+        else:
+            ctk.CTkLabel(
+                items_list_frame,
+                text="No items added yet. Click 'Add from Template' or 'Add Custom Item' to get started.",
+                text_color="gray"
+            ).pack(pady=20)
+
+        # WARRANTIES SECTION
+        warranties_section_frame = ctk.CTkFrame(main_scroll)
+        warranties_section_frame.pack(fill="x", padx=10, pady=20)
+
+        warranties_header = ctk.CTkFrame(warranties_section_frame, fg_color="transparent")
+        warranties_header.pack(fill="x", padx=10, pady=5)
+
+        ctk.CTkLabel(
+            warranties_header,
+            text="Warranties",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(side=tk.LEFT, padx=5)
+
+        ctk.CTkButton(
+            warranties_header,
+            text="+ Add Warranty",
+            command=lambda: self.add_warranty_to_contract(contract_id, client_id, parent_frame),
+            width=150,
+            height=28
+        ).pack(side=tk.RIGHT, padx=5)
+
+        # Display assigned warranties
+        warranties_list_frame = ctk.CTkFrame(warranties_section_frame)
+        warranties_list_frame.pack(fill="x", padx=10, pady=5)
+
+        contract_warranties = self.db.get_contract_warranties(contract_id)
+        if contract_warranties:
+            for cw in contract_warranties:
+                warranty_frame = ctk.CTkFrame(warranties_list_frame)
+                warranty_frame.pack(fill="x", pady=2)
+
+                info_frame = ctk.CTkFrame(warranty_frame, fg_color="transparent")
+                info_frame.pack(side=tk.LEFT, fill="both", expand=True, padx=10, pady=5)
+
+                name_label = ctk.CTkLabel(
+                    info_frame,
+                    text=cw['name'],
+                    font=ctk.CTkFont(size=12, weight="bold")
+                )
+                name_label.pack(anchor="w")
+
+                if cw['duration_years']:
+                    duration_label = ctk.CTkLabel(
+                        info_frame,
+                        text=f"Duration: {cw['duration_years']} year(s)",
+                        text_color="gray",
+                        font=ctk.CTkFont(size=10)
+                    )
+                    duration_label.pack(anchor="w")
+
+                desc_label = ctk.CTkLabel(
+                    info_frame,
+                    text=cw['description'][:100] + "..." if len(cw['description']) > 100 else cw['description'],
+                    wraplength=400
+                )
+                desc_label.pack(anchor="w", pady=2)
+
+                ctk.CTkButton(
+                    warranty_frame,
+                    text="Remove",
+                    command=lambda w=cw: self.remove_warranty_from_contract(contract_id, w['warranty_id'], client_id, parent_frame),
+                    width=80,
+                    height=28,
+                    fg_color="red",
+                    hover_color="darkred"
+                ).pack(side=tk.RIGHT, padx=10)
+        else:
+            ctk.CTkLabel(
+                warranties_list_frame,
+                text="No warranties assigned yet. Click 'Add Warranty' to select from your warranty library.",
+                text_color="gray"
+            ).pack(pady=20)
+
+        # TERMS SECTION
+        terms_section_frame = ctk.CTkFrame(main_scroll)
+        terms_section_frame.pack(fill="x", padx=10, pady=20)
+
+        terms_header = ctk.CTkFrame(terms_section_frame, fg_color="transparent")
+        terms_header.pack(fill="x", padx=10, pady=5)
+
+        ctk.CTkLabel(
+            terms_header,
+            text="Terms & Conditions",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(side=tk.LEFT, padx=5)
+
+        ctk.CTkButton(
+            terms_header,
+            text="+ Add Term",
+            command=lambda: self.add_term_to_contract(contract_id, client_id, parent_frame),
+            width=150,
+            height=28
+        ).pack(side=tk.RIGHT, padx=5)
+
+        # Display assigned terms
+        terms_list_frame = ctk.CTkFrame(terms_section_frame)
+        terms_list_frame.pack(fill="x", padx=10, pady=5)
+
+        contract_terms = self.db.get_contract_terms(contract_id)
+        if contract_terms:
+            for ct in contract_terms:
+                term_frame = ctk.CTkFrame(terms_list_frame)
+                term_frame.pack(fill="x", pady=2)
+
+                info_frame = ctk.CTkFrame(term_frame, fg_color="transparent")
+                info_frame.pack(side=tk.LEFT, fill="both", expand=True, padx=10, pady=5)
+
+                name_label = ctk.CTkLabel(
+                    info_frame,
+                    text=ct['name'],
+                    font=ctk.CTkFont(size=12, weight="bold")
+                )
+                name_label.pack(anchor="w")
+
+                if ct['category']:
+                    cat_label = ctk.CTkLabel(
+                        info_frame,
+                        text=f"Category: {ct['category']}",
+                        text_color="gray",
+                        font=ctk.CTkFont(size=10)
+                    )
+                    cat_label.pack(anchor="w")
+
+                desc_label = ctk.CTkLabel(
+                    info_frame,
+                    text=ct['description'][:100] + "..." if len(ct['description']) > 100 else ct['description'],
+                    wraplength=400
+                )
+                desc_label.pack(anchor="w", pady=2)
+
+                ctk.CTkButton(
+                    term_frame,
+                    text="Remove",
+                    command=lambda t=ct: self.remove_term_from_contract(contract_id, t['term_id'], client_id, parent_frame),
+                    width=80,
+                    height=28,
+                    fg_color="red",
+                    hover_color="darkred"
+                ).pack(side=tk.RIGHT, padx=10)
 
         # Action buttons
         action_frame = ctk.CTkFrame(parent_frame, fg_color="transparent")
@@ -1985,14 +2255,24 @@ class LandscapingApp(ctk.CTk):
 
     def save_contract_changes(self, contract_id: int, client_id: int, parent_frame):
         """Save changes to a contract."""
+        # Recalculate total from items
+        items = self.db.get_contract_items(contract_id)
+        total_amount = sum(item['total'] for item in items)
+
         updates = {
             'title': self.contract_entries['title'].get(),
             'contract_type': self.contract_entries['contract_type'].get(),
-            'status': self.contract_entries['status'].get()
+            'status': self.contract_entries['status'].get(),
+            'start_date': self.contract_entries['start_date'].get() or None,
+            'end_date': self.contract_entries['end_date'].get() or None,
+            'payment_terms': self.contract_entries['payment_terms'].get() or None,
+            'notes': self.contract_entries['notes'].get("1.0", "end-1c") or None,
+            'total_amount': total_amount
         }
 
         self.db.update_contract(contract_id, **updates)
-        self.update_status("Contract saved", "green")
+        self.update_status("Contract saved successfully", "green")
+        self.open_contract(contract_id, client_id, parent_frame)
 
     def create_contract_new_version(self, contract_id: int, client_id: int, parent_frame):
         """Create a new version of a contract."""
@@ -2002,8 +2282,645 @@ class LandscapingApp(ctk.CTk):
 
     def generate_contract_pdf(self, contract_id: int):
         """Generate PDF for a contract."""
-        # Placeholder for PDF generation
-        self.update_status("PDF generation coming soon", "orange")
+        try:
+            from reportlab.lib.pagesizes import letter
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import inch
+            from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+            from reportlab.lib import colors
+            from datetime import datetime
+            import os
+
+            # Get contract data
+            contract = self.db.get_contract(contract_id)
+            if not contract:
+                self.update_status("Contract not found", "red")
+                return
+
+            client = self.db.get_client(contract['client_id'])
+            items = self.db.get_contract_items(contract_id)
+            warranties = self.db.get_contract_warranties(contract_id)
+            terms = self.db.get_contract_terms(contract_id)
+
+            # Create PDF filename
+            client_name = client['name'].replace(' ', '_')
+            contract_title = contract['title'].replace(' ', '_')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"Contract_{client_name}_{contract_title}_v{contract['version']}_{timestamp}.pdf"
+            filepath = os.path.join(os.getcwd(), filename)
+
+            # Create PDF document
+            doc = SimpleDocTemplate(filepath, pagesize=letter,
+                                    rightMargin=0.75*inch, leftMargin=0.75*inch,
+                                    topMargin=0.75*inch, bottomMargin=0.75*inch)
+
+            # Container for the 'Flowable' objects
+            story = []
+
+            # Define styles
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=18,
+                textColor=colors.HexColor('#2e7d32'),
+                spaceAfter=30,
+                alignment=TA_CENTER
+            )
+            heading_style = ParagraphStyle(
+                'CustomHeading',
+                parent=styles['Heading2'],
+                fontSize=14,
+                textColor=colors.HexColor('#2e7d32'),
+                spaceAfter=12,
+                spaceBefore=12
+            )
+            normal_style = styles['Normal']
+            small_style = ParagraphStyle(
+                'Small',
+                parent=styles['Normal'],
+                fontSize=9,
+                textColor=colors.gray
+            )
+
+            # Title
+            story.append(Paragraph(contract['title'], title_style))
+            story.append(Spacer(1, 0.2*inch))
+
+            # Contract Info
+            info_data = [
+                ['Contract Type:', contract['contract_type'].title()],
+                ['Status:', contract['status'].title()],
+                ['Version:', f"v{contract['version']}"],
+                ['Created:', contract['created_date'].split()[0] if contract['created_date'] else 'N/A'],
+            ]
+
+            if contract['start_date']:
+                info_data.append(['Start Date:', contract['start_date']])
+            if contract['end_date']:
+                info_data.append(['End Date:', contract['end_date']])
+            if contract['payment_terms']:
+                info_data.append(['Payment Terms:', contract['payment_terms']])
+
+            info_table = Table(info_data, colWidths=[1.5*inch, 4*inch])
+            info_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            story.append(info_table)
+            story.append(Spacer(1, 0.3*inch))
+
+            # Client Info
+            story.append(Paragraph('Client Information', heading_style))
+            client_data = [
+                ['Name:', client['name']],
+                ['Email:', client['email'] or 'N/A'],
+                ['Phone:', client['phone'] or 'N/A'],
+                ['Address:', client['address'] or 'N/A'],
+            ]
+            client_table = Table(client_data, colWidths=[1.5*inch, 4*inch])
+            client_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            story.append(client_table)
+            story.append(Spacer(1, 0.3*inch))
+
+            # Contract Items
+            if items:
+                story.append(Paragraph('Contract Items', heading_style))
+                story.append(Spacer(1, 0.1*inch))
+
+                # Items table header
+                items_data = [['Description', 'Type', 'Qty', 'Unit', 'Price', 'Total']]
+
+                total_amount = 0
+                for item in items:
+                    # Description with custom notes if present
+                    desc = item['description']
+                    if item['custom_notes']:
+                        desc += f"\n<i>{item['custom_notes']}</i>"
+
+                    items_data.append([
+                        Paragraph(desc, small_style),
+                        item['pricing_type'].replace('_', ' '),
+                        f"{item['quantity']:.2f}",
+                        item['unit'] or '-',
+                        f"${item['unit_price']:.2f}",
+                        f"${item['total']:.2f}"
+                    ])
+                    total_amount += item['total']
+
+                # Add total row
+                items_data.append(['', '', '', '', 'TOTAL:', f"${total_amount:.2f}"])
+
+                items_table = Table(items_data, colWidths=[2.5*inch, 0.9*inch, 0.6*inch, 0.6*inch, 0.8*inch, 0.8*inch])
+                items_table.setStyle(TableStyle([
+                    # Header
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2e7d32')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                    # Data rows
+                    ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -2), 9),
+                    ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
+                    ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('GRID', (0, 0), (-1, -2), 0.5, colors.grey),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f0f0f0')]),
+                    # Total row
+                    ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f5e9')),
+                    ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, -1), (-1, -1), 11),
+                    ('LINEABOVE', (0, -1), (-1, -1), 2, colors.HexColor('#2e7d32')),
+                ]))
+                story.append(items_table)
+                story.append(Spacer(1, 0.3*inch))
+
+            # Warranties
+            if warranties:
+                story.append(Paragraph('Warranties', heading_style))
+                for warranty in warranties:
+                    warranty_title = f"<b>{warranty['name']}</b>"
+                    if warranty['duration_years']:
+                        warranty_title += f" ({warranty['duration_years']} year(s))"
+                    story.append(Paragraph(warranty_title, normal_style))
+                    story.append(Paragraph(warranty['description'], small_style))
+                    story.append(Spacer(1, 0.15*inch))
+
+            # Terms and Conditions
+            if terms:
+                story.append(Paragraph('Terms & Conditions', heading_style))
+                for i, term in enumerate(terms, 1):
+                    term_title = f"<b>{i}. {term['name']}</b>"
+                    if term['category']:
+                        term_title += f" <i>({term['category']})</i>"
+                    story.append(Paragraph(term_title, normal_style))
+                    story.append(Paragraph(term['description'], small_style))
+                    story.append(Spacer(1, 0.15*inch))
+
+            # Contract Notes
+            if contract['notes']:
+                story.append(Spacer(1, 0.2*inch))
+                story.append(Paragraph('Additional Notes', heading_style))
+                story.append(Paragraph(contract['notes'], normal_style))
+
+            # Footer
+            story.append(Spacer(1, 0.5*inch))
+            footer_text = f"<i>Generated on {datetime.now().strftime('%Y-%m-%d at %H:%M')}</i>"
+            story.append(Paragraph(footer_text, small_style))
+
+            # Build PDF
+            doc.build(story)
+
+            # Update contract with PDF path
+            self.db.update_contract(contract_id, pdf_path=filepath)
+
+            self.update_status(f"PDF generated: {filename}", "green")
+
+            # Ask if user wants to open the PDF
+            if messagebox.askyesno("PDF Generated", f"PDF saved as:\n{filename}\n\nWould you like to open it?"):
+                import subprocess
+                import platform
+
+                system = platform.system()
+                try:
+                    if system == 'Darwin':  # macOS
+                        subprocess.run(['open', filepath])
+                    elif system == 'Windows':
+                        os.startfile(filepath)
+                    else:  # Linux
+                        subprocess.run(['xdg-open', filepath])
+                except Exception as e:
+                    messagebox.showinfo("PDF Location", f"PDF saved at:\n{filepath}")
+
+        except Exception as e:
+            self.update_status(f"PDF generation failed: {str(e)}", "red")
+            messagebox.showerror("PDF Error", f"Failed to generate PDF:\n{str(e)}")
+
+    # CONTRACT ITEM MANAGEMENT METHODS
+
+    def add_contract_item_from_template(self, contract_id: int, client_id: int, parent_frame):
+        """Add an item to contract from template library."""
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Add Item from Template")
+        dialog.geometry("700x600")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        # Get all templates
+        templates = self.db.get_all_contract_templates()
+        if not templates:
+            ctk.CTkLabel(
+                dialog,
+                text="No templates available. Please create templates first.",
+                font=ctk.CTkFont(size=12)
+            ).pack(pady=50)
+            ctk.CTkButton(dialog, text="Close", command=dialog.destroy, width=100).pack(pady=10)
+            return
+
+        # Scrollable frame for templates
+        scroll_frame = ctk.CTkScrollableFrame(dialog, label_text="Select Template")
+        scroll_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        scroll_frame._parent_canvas.configure(yscrollincrement=20)
+
+        def select_and_configure_template(template):
+            """Show configuration dialog for selected template."""
+            dialog.destroy()
+            self.configure_contract_item(contract_id, client_id, parent_frame, template)
+
+        # Display templates
+        for template in templates:
+            template_frame = ctk.CTkFrame(scroll_frame)
+            template_frame.pack(fill="x", pady=5)
+
+            info_frame = ctk.CTkFrame(template_frame, fg_color="transparent")
+            info_frame.pack(side=tk.LEFT, fill="both", expand=True, padx=10, pady=10)
+
+            name_label = ctk.CTkLabel(
+                info_frame,
+                text=template['name'],
+                font=ctk.CTkFont(size=13, weight="bold")
+            )
+            name_label.pack(anchor="w")
+
+            if template['category']:
+                cat_label = ctk.CTkLabel(
+                    info_frame,
+                    text=f"Category: {template['category']}",
+                    text_color="gray",
+                    font=ctk.CTkFont(size=10)
+                )
+                cat_label.pack(anchor="w")
+
+            desc_label = ctk.CTkLabel(
+                info_frame,
+                text=template['description'][:80] + "..." if len(template['description']) > 80 else template['description'],
+                wraplength=400
+            )
+            desc_label.pack(anchor="w", pady=2)
+
+            pricing_label = ctk.CTkLabel(
+                info_frame,
+                text=f"Default: {template['default_pricing_type']} | Unit: {template['default_unit'] or 'N/A'}",
+                text_color="gray",
+                font=ctk.CTkFont(size=10)
+            )
+            pricing_label.pack(anchor="w")
+
+            ctk.CTkButton(
+                template_frame,
+                text="Select",
+                command=lambda t=template: select_and_configure_template(t),
+                width=80,
+                height=32
+            ).pack(side=tk.RIGHT, padx=10)
+
+    def configure_contract_item(self, contract_id: int, client_id: int, parent_frame, template=None, existing_item=None):
+        """Configure a contract item (for adding or editing)."""
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Configure Contract Item" if not existing_item else "Edit Contract Item")
+        dialog.geometry("600x700")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        main_frame = ctk.CTkScrollableFrame(dialog)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        main_frame._parent_canvas.configure(yscrollincrement=20)
+
+        row = 0
+
+        # Description
+        ctk.CTkLabel(main_frame, text="Description:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="nw", padx=10, pady=10)
+        desc_text = ctk.CTkTextbox(main_frame, width=400, height=100)
+        if template:
+            desc_text.insert("1.0", template['description'])
+        elif existing_item:
+            desc_text.insert("1.0", existing_item['description'])
+        desc_text.grid(row=row, column=1, sticky="w", padx=10, pady=10)
+        row += 1
+
+        # Custom Notes
+        ctk.CTkLabel(main_frame, text="Custom Notes:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="nw", padx=10, pady=10)
+        notes_text = ctk.CTkTextbox(main_frame, width=400, height=80)
+        if existing_item and existing_item['custom_notes']:
+            notes_text.insert("1.0", existing_item['custom_notes'])
+        notes_text.grid(row=row, column=1, sticky="w", padx=10, pady=10)
+        row += 1
+
+        # Pricing Type
+        ctk.CTkLabel(main_frame, text="Pricing Type:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=10)
+        pricing_var = tk.StringVar(value=(existing_item['pricing_type'] if existing_item else (template['default_pricing_type'] if template else 'flat')))
+        pricing_menu = ctk.CTkOptionMenu(
+            main_frame,
+            values=["flat", "per_sqft", "per_linft", "time_material"],
+            variable=pricing_var,
+            width=200
+        )
+        pricing_menu.grid(row=row, column=1, sticky="w", padx=10, pady=10)
+        row += 1
+
+        # Quantity
+        ctk.CTkLabel(main_frame, text="Quantity:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=10)
+        qty_entry = ctk.CTkEntry(main_frame, width=200, placeholder_text="1.0")
+        qty_entry.insert(0, str(existing_item['quantity']) if existing_item else "1.0")
+        qty_entry.grid(row=row, column=1, sticky="w", padx=10, pady=10)
+        row += 1
+
+        # Unit
+        ctk.CTkLabel(main_frame, text="Unit:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=10)
+        unit_entry = ctk.CTkEntry(main_frame, width=200, placeholder_text="e.g., each, sqft, hours")
+        if template:
+            unit_entry.insert(0, template['default_unit'] or "")
+        elif existing_item:
+            unit_entry.insert(0, existing_item['unit'] or "")
+        unit_entry.grid(row=row, column=1, sticky="w", padx=10, pady=10)
+        row += 1
+
+        # Unit Price
+        ctk.CTkLabel(main_frame, text="Unit Price ($):", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=10)
+        price_entry = ctk.CTkEntry(main_frame, width=200, placeholder_text="0.00")
+        price_entry.insert(0, str(existing_item['unit_price']) if existing_item else "0.00")
+        price_entry.grid(row=row, column=1, sticky="w", padx=10, pady=10)
+        row += 1
+
+        # Total (calculated)
+        ctk.CTkLabel(main_frame, text="Total:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=10)
+        total_label = ctk.CTkLabel(main_frame, text="$0.00", font=ctk.CTkFont(size=14, weight="bold"))
+        total_label.grid(row=row, column=1, sticky="w", padx=10, pady=10)
+        row += 1
+
+        def update_total(*args):
+            """Update the total calculation."""
+            try:
+                qty = float(qty_entry.get() or 0)
+                price = float(price_entry.get() or 0)
+                total = qty * price
+                total_label.configure(text=f"${total:.2f}")
+            except ValueError:
+                total_label.configure(text="$0.00")
+
+        # Bind updates
+        qty_entry.bind("<KeyRelease>", update_total)
+        price_entry.bind("<KeyRelease>", update_total)
+        update_total()
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=20)
+
+        def save_item():
+            """Save the contract item."""
+            try:
+                qty = float(qty_entry.get() or 0)
+                price = float(price_entry.get() or 0)
+                total = qty * price
+
+                if existing_item:
+                    # Update existing item
+                    self.db.update_contract_item(
+                        existing_item['id'],
+                        description=desc_text.get("1.0", "end-1c"),
+                        custom_notes=notes_text.get("1.0", "end-1c") or None,
+                        pricing_type=pricing_var.get(),
+                        quantity=qty,
+                        unit=unit_entry.get() or None,
+                        unit_price=price,
+                        total=total
+                    )
+                    self.update_status("Item updated successfully", "green")
+                else:
+                    # Add new item
+                    self.db.add_contract_item(
+                        contract_id=contract_id,
+                        template_id=template['id'] if template else None,
+                        description=desc_text.get("1.0", "end-1c"),
+                        custom_notes=notes_text.get("1.0", "end-1c") or None,
+                        pricing_type=pricing_var.get(),
+                        quantity=qty,
+                        unit=unit_entry.get() or None,
+                        unit_price=price,
+                        total=total
+                    )
+                    self.update_status("Item added successfully", "green")
+
+                dialog.destroy()
+                self.open_contract(contract_id, client_id, parent_frame)
+            except ValueError:
+                messagebox.showerror("Invalid Input", "Please enter valid numbers for quantity and price.")
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Save",
+            command=save_item,
+            width=120,
+            height=35,
+            fg_color="green",
+            hover_color="darkgreen"
+        ).pack(side=tk.LEFT, padx=5)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            width=120,
+            height=35
+        ).pack(side=tk.LEFT, padx=5)
+
+    def add_custom_contract_item(self, contract_id: int, client_id: int, parent_frame):
+        """Add a custom item to contract (not from template)."""
+        self.configure_contract_item(contract_id, client_id, parent_frame, template=None, existing_item=None)
+
+    def edit_contract_item(self, item_id: int, contract_id: int, client_id: int, parent_frame):
+        """Edit an existing contract item."""
+        item = self.db.get_contract_item(item_id)
+        if item:
+            self.configure_contract_item(contract_id, client_id, parent_frame, template=None, existing_item=item)
+
+    def delete_contract_item(self, item_id: int, contract_id: int, client_id: int, parent_frame):
+        """Delete a contract item."""
+        if messagebox.askyesno("Delete Item", "Are you sure you want to delete this item?"):
+            self.db.delete_contract_item(item_id)
+            self.update_status("Item deleted", "green")
+            self.open_contract(contract_id, client_id, parent_frame)
+
+    # WARRANTY MANAGEMENT METHODS
+
+    def add_warranty_to_contract(self, contract_id: int, client_id: int, parent_frame):
+        """Add a warranty to a contract."""
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Add Warranty")
+        dialog.geometry("600x500")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        # Get all warranties
+        warranties = self.db.get_all_warranties()
+        if not warranties:
+            ctk.CTkLabel(
+                dialog,
+                text="No warranties available. Please create warranties first.",
+                font=ctk.CTkFont(size=12)
+            ).pack(pady=50)
+            ctk.CTkButton(dialog, text="Close", command=dialog.destroy, width=100).pack(pady=10)
+            return
+
+        # Get already assigned warranties
+        assigned = self.db.get_contract_warranties(contract_id)
+        assigned_ids = [w['warranty_id'] for w in assigned]
+
+        # Scrollable frame
+        scroll_frame = ctk.CTkScrollableFrame(dialog, label_text="Select Warranty")
+        scroll_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        scroll_frame._parent_canvas.configure(yscrollincrement=20)
+
+        # Display warranties
+        for warranty in warranties:
+            if warranty['id'] in assigned_ids:
+                continue  # Skip already assigned
+
+            warranty_frame = ctk.CTkFrame(scroll_frame)
+            warranty_frame.pack(fill="x", pady=5)
+
+            info_frame = ctk.CTkFrame(warranty_frame, fg_color="transparent")
+            info_frame.pack(side=tk.LEFT, fill="both", expand=True, padx=10, pady=10)
+
+            name_label = ctk.CTkLabel(
+                info_frame,
+                text=warranty['name'],
+                font=ctk.CTkFont(size=13, weight="bold")
+            )
+            name_label.pack(anchor="w")
+
+            if warranty['duration_years']:
+                duration_label = ctk.CTkLabel(
+                    info_frame,
+                    text=f"Duration: {warranty['duration_years']} year(s)",
+                    text_color="gray",
+                    font=ctk.CTkFont(size=10)
+                )
+                duration_label.pack(anchor="w")
+
+            desc_label = ctk.CTkLabel(
+                info_frame,
+                text=warranty['description'][:80] + "..." if len(warranty['description']) > 80 else warranty['description'],
+                wraplength=400
+            )
+            desc_label.pack(anchor="w", pady=2)
+
+            def add_warranty(w=warranty):
+                self.db.add_warranty_to_contract(contract_id, w['id'])
+                self.update_status("Warranty added successfully", "green")
+                dialog.destroy()
+                self.open_contract(contract_id, client_id, parent_frame)
+
+            ctk.CTkButton(
+                warranty_frame,
+                text="Add",
+                command=add_warranty,
+                width=80,
+                height=32
+            ).pack(side=tk.RIGHT, padx=10)
+
+    def remove_warranty_from_contract(self, contract_id: int, warranty_id: int, client_id: int, parent_frame):
+        """Remove a warranty from a contract."""
+        self.db.remove_warranty_from_contract(contract_id, warranty_id)
+        self.update_status("Warranty removed", "green")
+        self.open_contract(contract_id, client_id, parent_frame)
+
+    # TERM MANAGEMENT METHODS
+
+    def add_term_to_contract(self, contract_id: int, client_id: int, parent_frame):
+        """Add a term to a contract."""
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Add Term")
+        dialog.geometry("600x500")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        # Get all terms
+        terms = self.db.get_all_terms()
+        if not terms:
+            ctk.CTkLabel(
+                dialog,
+                text="No terms available. Please create terms first.",
+                font=ctk.CTkFont(size=12)
+            ).pack(pady=50)
+            ctk.CTkButton(dialog, text="Close", command=dialog.destroy, width=100).pack(pady=10)
+            return
+
+        # Get already assigned terms
+        assigned = self.db.get_contract_terms(contract_id)
+        assigned_ids = [t['term_id'] for t in assigned]
+
+        # Scrollable frame
+        scroll_frame = ctk.CTkScrollableFrame(dialog, label_text="Select Term")
+        scroll_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        scroll_frame._parent_canvas.configure(yscrollincrement=20)
+
+        # Display terms
+        for term in terms:
+            if term['id'] in assigned_ids:
+                continue  # Skip already assigned
+
+            term_frame = ctk.CTkFrame(scroll_frame)
+            term_frame.pack(fill="x", pady=5)
+
+            info_frame = ctk.CTkFrame(term_frame, fg_color="transparent")
+            info_frame.pack(side=tk.LEFT, fill="both", expand=True, padx=10, pady=10)
+
+            name_label = ctk.CTkLabel(
+                info_frame,
+                text=term['name'],
+                font=ctk.CTkFont(size=13, weight="bold")
+            )
+            name_label.pack(anchor="w")
+
+            if term['category']:
+                cat_label = ctk.CTkLabel(
+                    info_frame,
+                    text=f"Category: {term['category']}",
+                    text_color="gray",
+                    font=ctk.CTkFont(size=10)
+                )
+                cat_label.pack(anchor="w")
+
+            desc_label = ctk.CTkLabel(
+                info_frame,
+                text=term['description'][:80] + "..." if len(term['description']) > 80 else term['description'],
+                wraplength=400
+            )
+            desc_label.pack(anchor="w", pady=2)
+
+            def add_term(t=term):
+                self.db.add_term_to_contract(contract_id, t['id'])
+                self.update_status("Term added successfully", "green")
+                dialog.destroy()
+                self.open_contract(contract_id, client_id, parent_frame)
+
+            ctk.CTkButton(
+                term_frame,
+                text="Add",
+                command=add_term,
+                width=80,
+                height=32
+            ).pack(side=tk.RIGHT, padx=10)
+
+    def remove_term_from_contract(self, contract_id: int, term_id: int, client_id: int, parent_frame):
+        """Remove a term from a contract."""
+        self.db.remove_term_from_contract(contract_id, term_id)
+        self.update_status("Term removed", "green")
+        self.open_contract(contract_id, client_id, parent_frame)
 
     def rebuild_materials_table(self, existing_materials, num_empty_rows=1):
         """Build or rebuild the materials table."""
@@ -5313,6 +6230,590 @@ class LandscapingApp(ctk.CTk):
                 self.refresh_materials_list()
             except Exception as e:
                 messagebox.showerror("Error", f"Could not delete material: {str(e)}")
+
+    # ==================== CONTRACTS TAB ====================
+
+    def init_contracts_tab(self):
+        """Initialize the Contracts tab for template management and contract creation."""
+        self.tab_contracts.grid_columnconfigure(0, weight=1)
+        self.tab_contracts.grid_rowconfigure(1, weight=1)
+
+        # Header
+        header = ctk.CTkLabel(
+            self.tab_contracts,
+            text="Contract & Bid Management",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        header.grid(row=0, column=0, sticky="w", padx=15, pady=12)
+
+        # Create sub-tabview for Templates and Create Contract
+        contracts_tabview = ctk.CTkTabview(self.tab_contracts)
+        contracts_tabview.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+
+        tab_templates = contracts_tabview.add("Templates Library")
+        tab_warranties = contracts_tabview.add("Warranties")
+        tab_terms = contracts_tabview.add("Terms")
+        tab_create = contracts_tabview.add("Create New Contract")
+
+        # Initialize sub-tabs
+        self.init_templates_tab(tab_templates)
+        self.init_warranties_tab(tab_warranties)
+        self.init_terms_tab(tab_terms)
+        self.init_create_contract_tab(tab_create)
+
+    def init_templates_tab(self, parent):
+        """Initialize contract item templates management."""
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(2, weight=1)
+
+        # Description
+        desc = ctk.CTkLabel(
+            parent,
+            text="Reusable contract line items (Retaining Wall, Lawn Care, etc.)",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        desc.grid(row=0, column=0, sticky="w", padx=15, pady=10)
+
+        # Button frame
+        btn_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        btn_frame.grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 10))
+
+        ctk.CTkButton(
+            btn_frame,
+            text="+ Add Template",
+            command=self.add_contract_template,
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="green",
+            hover_color="darkgreen"
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Templates list
+        self.templates_scroll = ctk.CTkScrollableFrame(parent)
+        self.templates_scroll.grid(row=2, column=0, sticky="nsew", padx=15, pady=(0, 15))
+        self.templates_scroll.grid_columnconfigure(0, weight=1)
+
+        self.refresh_templates_list()
+
+    def refresh_templates_list(self):
+        """Refresh the contract templates list."""
+        # Clear existing
+        for widget in self.templates_scroll.winfo_children():
+            widget.destroy()
+
+        templates = self.db.get_all_contract_templates()
+
+        if templates:
+            for template in templates:
+                template_frame = ctk.CTkFrame(self.templates_scroll, border_width=1)
+                template_frame.pack(fill="x", pady=5, padx=5)
+                template_frame.grid_columnconfigure(1, weight=1)
+
+                # Name
+                name_label = ctk.CTkLabel(
+                    template_frame,
+                    text=template['name'],
+                    font=ctk.CTkFont(size=13, weight="bold")
+                )
+                name_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 5))
+
+                # Description (truncated)
+                desc_text = template['description'][:100] + ("..." if len(template['description']) > 100 else "")
+                desc_label = ctk.CTkLabel(
+                    template_frame,
+                    text=desc_text,
+                    font=ctk.CTkFont(size=11),
+                    text_color="gray",
+                    wraplength=400,
+                    justify="left"
+                )
+                desc_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+
+                # Details
+                details = f"Pricing: {template['default_pricing_type'].title()}"
+                if template['category']:
+                    details += f" | Category: {template['category']}"
+                details_label = ctk.CTkLabel(
+                    template_frame,
+                    text=details,
+                    font=ctk.CTkFont(size=10),
+                    text_color="gray"
+                )
+                details_label.grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
+
+                # Buttons
+                btn_frame = ctk.CTkFrame(template_frame, fg_color="transparent")
+                btn_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
+
+                ctk.CTkButton(
+                    btn_frame,
+                    text="Delete",
+                    command=lambda t=template: self.delete_template_confirm(t['id']),
+                    fg_color="red",
+                    hover_color="darkred",
+                    width=80,
+                    height=30
+                ).pack(side=tk.LEFT, padx=2)
+        else:
+            no_templates = ctk.CTkLabel(
+                self.templates_scroll,
+                text="No templates yet. Click 'Add Template' to create reusable contract items.",
+                font=ctk.CTkFont(size=12),
+                text_color="gray"
+            )
+            no_templates.pack(pady=40)
+
+    def add_contract_template(self):
+        """Add a new contract template."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Add Contract Template")
+        dialog.geometry("600x550")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - 300
+        y = (dialog.winfo_screenheight() // 2) - 275
+        dialog.geometry(f"600x550+{x}+{y}")
+
+        ctk.CTkLabel(
+            dialog,
+            text="Create Reusable Contract Item",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(pady=15)
+
+        # Form
+        form_frame = ctk.CTkFrame(dialog)
+        form_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        entries = {}
+
+        # Name
+        row = 0
+        ctk.CTkLabel(form_frame, text="Name:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        name_entry = ctk.CTkEntry(form_frame, placeholder_text="e.g., Retaining Wall", width=400)
+        name_entry.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        entries['name'] = name_entry
+        row += 1
+
+        # Category
+        ctk.CTkLabel(form_frame, text="Category:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        category_entry = ctk.CTkEntry(form_frame, placeholder_text="e.g., Hardscaping (optional)", width=400)
+        category_entry.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        entries['category'] = category_entry
+        row += 1
+
+        # Description
+        ctk.CTkLabel(form_frame, text="Description:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="nw", padx=10, pady=5)
+        desc_text = ctk.CTkTextbox(form_frame, width=400, height=150)
+        desc_text.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        entries['description'] = desc_text
+        row += 1
+
+        # Default pricing type
+        ctk.CTkLabel(form_frame, text="Default Pricing:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        pricing_var = tk.StringVar(value="flat")
+        pricing_menu = ctk.CTkOptionMenu(
+            form_frame,
+            values=["flat", "per_sqft", "per_linft", "time_material"],
+            variable=pricing_var,
+            width=200
+        )
+        pricing_menu.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        entries['pricing_type'] = pricing_var
+        row += 1
+
+        # Default unit
+        ctk.CTkLabel(form_frame, text="Default Unit:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        unit_entry = ctk.CTkEntry(form_frame, placeholder_text="e.g., sq ft, lin ft (optional)", width=200)
+        unit_entry.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        entries['unit'] = unit_entry
+
+        # Buttons
+        def save_template():
+            name = entries['name'].get().strip()
+            desc = entries['description'].get("1.0", "end-1c").strip()
+
+            if not name or not desc:
+                messagebox.showerror("Missing Information", "Name and description are required.")
+                return
+
+            self.db.add_contract_template(
+                name=name,
+                description=desc,
+                category=entries['category'].get().strip(),
+                default_pricing_type=entries['pricing_type'].get(),
+                default_unit=entries['unit'].get().strip()
+            )
+
+            self.update_status("Template added", "green")
+            dialog.destroy()
+            self.refresh_templates_list()
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=15)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Save Template",
+            command=save_template,
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="green",
+            hover_color="darkgreen",
+            width=150
+        ).pack(side=tk.LEFT, padx=5)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            height=40,
+            width=100
+        ).pack(side=tk.LEFT, padx=5)
+
+    def delete_template_confirm(self, template_id):
+        """Delete a contract template."""
+        if messagebox.askyesno("Delete Template", "Delete this template? This cannot be undone."):
+            self.db.delete_contract_template(template_id)
+            self.update_status("Template deleted", "green")
+            self.refresh_templates_list()
+
+    def init_warranties_tab(self, parent):
+        """Initialize warranties management."""
+        desc = ctk.CTkLabel(
+            parent,
+            text="Warranty templates for contracts",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        desc.pack(pady=10)
+
+        ctk.CTkButton(
+            parent,
+            text="+ Add Warranty",
+            command=self.add_warranty,
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="green"
+        ).pack(pady=10)
+
+        self.warranties_scroll = ctk.CTkScrollableFrame(parent)
+        self.warranties_scroll.pack(fill="both", expand=True, padx=15, pady=10)
+
+        self.refresh_warranties_list()
+
+    def refresh_warranties_list(self):
+        """Refresh warranties list."""
+        for widget in self.warranties_scroll.winfo_children():
+            widget.destroy()
+
+        warranties = self.db.get_all_warranties()
+        if warranties:
+            for warranty in warranties:
+                w_frame = ctk.CTkFrame(self.warranties_scroll, border_width=1)
+                w_frame.pack(fill="x", pady=5, padx=5)
+
+                ctk.CTkLabel(
+                    w_frame,
+                    text=warranty['name'],
+                    font=ctk.CTkFont(size=13, weight="bold")
+                ).pack(anchor="w", padx=10, pady=(10, 5))
+
+                ctk.CTkLabel(
+                    w_frame,
+                    text=warranty['description'],
+                    font=ctk.CTkFont(size=11),
+                    text_color="gray",
+                    wraplength=400
+                ).pack(anchor="w", padx=10, pady=5)
+
+                if warranty['duration_text']:
+                    ctk.CTkLabel(
+                        w_frame,
+                        text=f"Duration: {warranty['duration_text']}",
+                        font=ctk.CTkFont(size=10),
+                        text_color="gray"
+                    ).pack(anchor="w", padx=10, pady=(0, 10))
+
+                ctk.CTkButton(
+                    w_frame,
+                    text="Delete",
+                    command=lambda w=warranty: self.delete_warranty_confirm(w['id']),
+                    fg_color="red",
+                    width=80,
+                    height=30
+                ).pack(anchor="w", padx=10, pady=(0, 10))
+        else:
+            ctk.CTkLabel(
+                self.warranties_scroll,
+                text="No warranties yet.",
+                text_color="gray"
+            ).pack(pady=40)
+
+    def add_warranty(self):
+        """Add a new warranty template."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Add Warranty")
+        dialog.geometry("500x400")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - 250
+        y = (dialog.winfo_screenheight() // 2) - 200
+        dialog.geometry(f"500x400+{x}+{y}")
+
+        ctk.CTkLabel(dialog, text="Add Warranty Template", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=15)
+
+        form = ctk.CTkFrame(dialog)
+        form.pack(fill="both", expand=True, padx=20, pady=10)
+
+        ctk.CTkLabel(form, text="Name:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        name_entry = ctk.CTkEntry(form, placeholder_text="e.g., 1 Year Workmanship", width=400)
+        name_entry.pack(padx=10, pady=5)
+
+        ctk.CTkLabel(form, text="Description:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        desc_text = ctk.CTkTextbox(form, width=400, height=100)
+        desc_text.pack(padx=10, pady=5)
+
+        ctk.CTkLabel(form, text="Duration:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        duration_entry = ctk.CTkEntry(form, placeholder_text="e.g., 1 year from completion", width=400)
+        duration_entry.pack(padx=10, pady=5)
+
+        def save():
+            name = name_entry.get().strip()
+            desc = desc_text.get("1.0", "end-1c").strip()
+            if not name or not desc:
+                messagebox.showerror("Error", "Name and description required")
+                return
+            self.db.add_warranty(name, desc, duration_entry.get().strip())
+            self.update_status("Warranty added", "green")
+            dialog.destroy()
+            self.refresh_warranties_list()
+
+        ctk.CTkButton(dialog, text="Save", command=save, fg_color="green", height=40, width=150).pack(pady=10)
+
+    def delete_warranty_confirm(self, warranty_id):
+        """Delete warranty with confirmation."""
+        if messagebox.askyesno("Delete", "Delete this warranty?"):
+            self.db.delete_warranty(warranty_id)
+            self.update_status("Warranty deleted", "green")
+            self.refresh_warranties_list()
+
+    def init_terms_tab(self, parent):
+        """Initialize terms management."""
+        desc = ctk.CTkLabel(
+            parent,
+            text="Contract terms templates",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        desc.pack(pady=10)
+
+        ctk.CTkButton(
+            parent,
+            text="+ Add Term",
+            command=self.add_term,
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="green"
+        ).pack(pady=10)
+
+        self.terms_scroll = ctk.CTkScrollableFrame(parent)
+        self.terms_scroll.pack(fill="both", expand=True, padx=15, pady=10)
+
+        self.refresh_terms_list()
+
+    def refresh_terms_list(self):
+        """Refresh terms list."""
+        for widget in self.terms_scroll.winfo_children():
+            widget.destroy()
+
+        terms = self.db.get_all_terms()
+        if terms:
+            for term in terms:
+                t_frame = ctk.CTkFrame(self.terms_scroll, border_width=1)
+                t_frame.pack(fill="x", pady=5, padx=5)
+
+                ctk.CTkLabel(
+                    t_frame,
+                    text=term['name'],
+                    font=ctk.CTkFont(size=13, weight="bold")
+                ).pack(anchor="w", padx=10, pady=(10, 5))
+
+                ctk.CTkLabel(
+                    t_frame,
+                    text=term['description'],
+                    font=ctk.CTkFont(size=11),
+                    text_color="gray",
+                    wraplength=400
+                ).pack(anchor="w", padx=10, pady=(5, 10))
+
+                ctk.CTkButton(
+                    t_frame,
+                    text="Delete",
+                    command=lambda t=term: self.delete_term_confirm(t['id']),
+                    fg_color="red",
+                    width=80,
+                    height=30
+                ).pack(anchor="w", padx=10, pady=(0, 10))
+        else:
+            ctk.CTkLabel(
+                self.terms_scroll,
+                text="No terms yet.",
+                text_color="gray"
+            ).pack(pady=40)
+
+    def add_term(self):
+        """Add a new term template."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Add Term")
+        dialog.geometry("500x400")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - 250
+        y = (dialog.winfo_screenheight() // 2) - 200
+        dialog.geometry(f"500x400+{x}+{y}")
+
+        ctk.CTkLabel(dialog, text="Add Contract Term", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=15)
+
+        form = ctk.CTkFrame(dialog)
+        form.pack(fill="both", expand=True, padx=20, pady=10)
+
+        ctk.CTkLabel(form, text="Name:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        name_entry = ctk.CTkEntry(form, placeholder_text="e.g., Payment Terms", width=400)
+        name_entry.pack(padx=10, pady=5)
+
+        ctk.CTkLabel(form, text="Description:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        desc_text = ctk.CTkTextbox(form, width=400, height=120)
+        desc_text.pack(padx=10, pady=5)
+
+        ctk.CTkLabel(form, text="Category:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        category_entry = ctk.CTkEntry(form, placeholder_text="e.g., Payment, Legal (optional)", width=400)
+        category_entry.pack(padx=10, pady=5)
+
+        def save():
+            name = name_entry.get().strip()
+            desc = desc_text.get("1.0", "end-1c").strip()
+            if not name or not desc:
+                messagebox.showerror("Error", "Name and description required")
+                return
+            self.db.add_term(name, desc, category_entry.get().strip())
+            self.update_status("Term added", "green")
+            dialog.destroy()
+            self.refresh_terms_list()
+
+        ctk.CTkButton(dialog, text="Save", command=save, fg_color="green", height=40, width=150).pack(pady=10)
+
+    def delete_term_confirm(self, term_id):
+        """Delete term with confirmation."""
+        if messagebox.askyesno("Delete", "Delete this term?"):
+            self.db.delete_term(term_id)
+            self.update_status("Term deleted", "green")
+            self.refresh_terms_list()
+
+    def init_create_contract_tab(self, parent):
+        """Initialize the create new contract tab."""
+        header = ctk.CTkLabel(
+            parent,
+            text="Create New Contract or Bid",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        header.pack(pady=20)
+
+        info = ctk.CTkLabel(
+            parent,
+            text="Select a client and create a contract/bid.\nYou can also access contracts through the Clients tab.",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        info.pack(pady=10)
+
+        # Client selection
+        select_frame = ctk.CTkFrame(parent)
+        select_frame.pack(fill="x", padx=40, pady=20)
+
+        ctk.CTkLabel(
+            select_frame,
+            text="Select Client:",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(side=tk.LEFT, padx=10)
+
+        self.new_contract_client_var = tk.StringVar(value="Select a client...")
+        self.new_contract_client_menu = ctk.CTkOptionMenu(
+            select_frame,
+            values=["Select a client..."],
+            variable=self.new_contract_client_var,
+            width=300,
+            font=ctk.CTkFont(size=13)
+        )
+        self.new_contract_client_menu.pack(side=tk.LEFT, padx=10)
+
+        # Refresh client list
+        self.refresh_contract_client_dropdown()
+
+        # Create button
+        ctk.CTkButton(
+            select_frame,
+            text="Create Contract",
+            command=self.create_contract_from_tab,
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="green",
+            hover_color="darkgreen",
+            width=150
+        ).pack(side=tk.LEFT, padx=10)
+
+    def refresh_contract_client_dropdown(self):
+        """Refresh the client dropdown for contract creation."""
+        clients = self.db.get_all_clients(active_only=True)
+        client_names = [c['name'] for c in clients]
+        if client_names:
+            self.new_contract_client_menu.configure(values=client_names)
+        else:
+            self.new_contract_client_menu.configure(values=["No clients available"])
+
+    def create_contract_from_tab(self):
+        """Create a new contract from the Contracts tab."""
+        client_name = self.new_contract_client_var.get()
+        if client_name == "Select a client..." or client_name == "No clients available":
+            messagebox.showwarning("No Client Selected", "Please select a client first.")
+            return
+
+        # Find client ID
+        clients = self.db.get_all_clients()
+        client_id = None
+        for c in clients:
+            if c['name'] == client_name:
+                client_id = c['id']
+                break
+
+        if not client_id:
+            return
+
+        # Create contract
+        import datetime
+        title = f"Contract - {datetime.datetime.now().strftime('%Y-%m-%d')}"
+
+        contract_id = self.db.create_contract(
+            client_id=client_id,
+            contract_type="maintenance",
+            title=title,
+            status="draft"
+        )
+
+        self.update_status(f"Contract created for {client_name}", "green")
+
+        # Switch to Clients tab and open the contract
+        self.tabview.set("Clients")
+        self.show_client_details(client_id)
 
     # ==================== IMPORT TAB ====================
 
