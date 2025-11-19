@@ -1420,3 +1420,140 @@ class Database:
 
         cursor.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
+
+    # ==================== WARRANTY OPERATIONS ====================
+
+    def add_warranty(self, name: str, description: str, duration_text: str = "") -> int:
+        """Add a new warranty template."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT INTO warranties (name, description, duration_text)
+            VALUES (?, ?, ?)
+        """, (name, description, duration_text))
+        self.connection.commit()
+        return cursor.lastrowid
+
+    def get_all_warranties(self) -> List[Dict]:
+        """Get all warranty templates."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT * FROM warranties ORDER BY name")
+        return [dict(row) for row in cursor.fetchall()]
+
+    def update_warranty(self, warranty_id: int, **kwargs):
+        """Update a warranty template."""
+        allowed_fields = ['name', 'description', 'duration_text']
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        if not updates:
+            return
+        set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
+        values = list(updates.values()) + [warranty_id]
+        cursor = self.connection.cursor()
+        cursor.execute(f"UPDATE warranties SET {set_clause} WHERE id = ?", values)
+        self.connection.commit()
+
+    def delete_warranty(self, warranty_id: int):
+        """Delete a warranty template."""
+        cursor = self.connection.cursor()
+        cursor.execute("DELETE FROM warranties WHERE id = ?", (warranty_id,))
+        self.connection.commit()
+
+    def add_contract_warranty(self, contract_id: int, warranty_id: int, custom_text: str = "") -> int:
+        """Add a warranty to a contract."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT INTO contract_warranties (contract_id, warranty_id, custom_text)
+            VALUES (?, ?, ?)
+        """, (contract_id, warranty_id, custom_text))
+        self.connection.commit()
+        return cursor.lastrowid
+
+    def get_contract_warranties(self, contract_id: int) -> List[Dict]:
+        """Get all warranties for a contract."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT cw.*, w.name, w.description, w.duration_text
+            FROM contract_warranties cw
+            JOIN warranties w ON cw.warranty_id = w.id
+            WHERE cw.contract_id = ?
+        """, (contract_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def remove_contract_warranty(self, contract_warranty_id: int):
+        """Remove a warranty from a contract."""
+        cursor = self.connection.cursor()
+        cursor.execute("DELETE FROM contract_warranties WHERE id = ?", (contract_warranty_id,))
+        self.connection.commit()
+
+    # ==================== TERMS OPERATIONS ====================
+
+    def add_term(self, name: str, description: str, category: str = "") -> int:
+        """Add a new term template."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT INTO terms (name, description, category)
+            VALUES (?, ?, ?)
+        """, (name, description, category))
+        self.connection.commit()
+        return cursor.lastrowid
+
+    def get_all_terms(self, category: str = None) -> List[Dict]:
+        """Get all term templates, optionally filtered by category."""
+        cursor = self.connection.cursor()
+        if category:
+            cursor.execute("""
+                SELECT * FROM terms WHERE category = ? ORDER BY name
+            """, (category,))
+        else:
+            cursor.execute("SELECT * FROM terms ORDER BY name")
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_term_categories(self) -> List[str]:
+        """Get all unique term categories."""
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT DISTINCT category FROM terms WHERE category != '' ORDER BY category")
+        return [row[0] for row in cursor.fetchall()]
+
+    def update_term(self, term_id: int, **kwargs):
+        """Update a term template."""
+        allowed_fields = ['name', 'description', 'category']
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        if not updates:
+            return
+        set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
+        values = list(updates.values()) + [term_id]
+        cursor = self.connection.cursor()
+        cursor.execute(f"UPDATE terms SET {set_clause} WHERE id = ?", values)
+        self.connection.commit()
+
+    def delete_term(self, term_id: int):
+        """Delete a term template."""
+        cursor = self.connection.cursor()
+        cursor.execute("DELETE FROM terms WHERE id = ?", (term_id,))
+        self.connection.commit()
+
+    def add_contract_term(self, contract_id: int, term_id: int, custom_text: str = "") -> int:
+        """Add a term to a contract."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT INTO contract_terms (contract_id, term_id, custom_text)
+            VALUES (?, ?, ?)
+        """, (contract_id, term_id, custom_text))
+        self.connection.commit()
+        return cursor.lastrowid
+
+    def get_contract_terms(self, contract_id: int) -> List[Dict]:
+        """Get all terms for a contract."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT ct.*, t.name, t.description, t.category
+            FROM contract_terms ct
+            JOIN terms t ON ct.term_id = t.id
+            WHERE ct.contract_id = ?
+        """, (contract_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def remove_contract_term(self, contract_term_id: int):
+        """Remove a term from a contract."""
+        cursor = self.connection.cursor()
+        cursor.execute("DELETE FROM contract_terms WHERE id = ?", (contract_term_id,))
+        self.connection.commit()
