@@ -165,14 +165,8 @@ class LandscapingApp(ctk.CTk):
     def get_ocr_scanner(self):
         """Get OCR scanner with lazy initialization."""
         if self.ocr_scanner is None:
-            # Try to get Gemini API key from settings
-            gemini_api_key = self.db.get_setting('gemini_api_key', '')
-
-            # Initialize OCR scanner with Gemini if API key is available
-            self.ocr_scanner = OCRScanner(
-                use_cloud=True,
-                gemini_api_key=gemini_api_key if gemini_api_key else None
-            )
+            # Initialize OCR scanner
+            self.ocr_scanner = OCRScanner()
         return self.ocr_scanner
 
     def get_upload_server(self):
@@ -5638,40 +5632,6 @@ OCR Scanning Instructions:
         )
         pdf_help.pack(pady=(0, 8), padx=10)
 
-        # Gemini API Key Setting (for advanced OCR)
-        gemini_frame = ctk.CTkFrame(scroll_frame)
-        gemini_frame.pack(pady=8, padx=10, fill="x")
-
-        gemini_label = ctk.CTkLabel(
-            gemini_frame,
-            text="Gemini API Key (for Image Scanning):",
-            font=ctk.CTkFont(size=12, weight="bold")
-        )
-        gemini_label.pack(pady=(8, 3), padx=10, anchor="w")
-
-        gemini_entry = ctk.CTkEntry(
-            gemini_frame,
-            placeholder_text="Get free API key from https://aistudio.google.com/app/apikey",
-            height=30,
-            show="*"  # Hide the API key
-        )
-        gemini_entry.pack(pady=3, padx=10, fill="x")
-
-        # Load current value
-        current_gemini_key = self.db.get_setting('gemini_api_key', '')
-        if current_gemini_key:
-            gemini_entry.insert(0, current_gemini_key)
-
-        gemini_help = ctk.CTkLabel(
-            gemini_frame,
-            text="Gemini AI provides superior OCR for handwritten visit tables. Free tier: 15 requests/minute.\nGet your free API key: https://aistudio.google.com/app/apikey",
-            font=ctk.CTkFont(size=9),
-            text_color="gray",
-            wraplength=700,
-            justify="left"
-        )
-        gemini_help.pack(pady=(0, 8), padx=10, anchor="w")
-
         # Working Year Setting
         year_frame = ctk.CTkFrame(scroll_frame)
         year_frame.pack(pady=8, padx=10, fill="x")
@@ -5751,12 +5711,6 @@ OCR Scanning Instructions:
                 # Save PDF export path
                 pdf_path = pdf_entry.get().strip()
                 self.db.set_setting('pdf_export_path', pdf_path)
-
-                # Save Gemini API key
-                gemini_key = gemini_entry.get().strip()
-                self.db.set_setting('gemini_api_key', gemini_key)
-                # Reset OCR scanner to pick up new API key
-                self.ocr_scanner = None
 
                 # Save working year
                 new_year = year_var.get()

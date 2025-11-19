@@ -100,6 +100,14 @@ class Database:
             )
         """)
 
+        # Settings table for application configuration
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+
         self.connection.commit()
 
     # ==================== CLIENT OPERATIONS ====================
@@ -386,3 +394,36 @@ class Database:
         """Get statistics for all clients."""
         clients = self.get_all_clients(active_only)
         return [self.get_client_statistics(client['id']) for client in clients]
+
+    # ==================== SETTINGS OPERATIONS ====================
+
+    def get_setting(self, key: str, default: str = None) -> Optional[str]:
+        """
+        Get a setting value by key.
+
+        Args:
+            key: Setting key
+            default: Default value if setting doesn't exist
+
+        Returns:
+            Setting value or default
+        """
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        return row['value'] if row else default
+
+    def set_setting(self, key: str, value: str):
+        """
+        Set a setting value.
+
+        Args:
+            key: Setting key
+            value: Setting value
+        """
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO settings (key, value)
+            VALUES (?, ?)
+        """, (key, value))
+        self.connection.commit()
