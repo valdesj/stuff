@@ -106,6 +106,17 @@ class LandscapingApp(ctk.CTk):
         self.tabview = ctk.CTkTabview(self.main_container, height=750)
         self.tabview.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
+        # Create status bar at bottom
+        self.status_bar = ctk.CTkLabel(
+            self.main_container,
+            text="Ready",
+            font=ctk.CTkFont(size=11),
+            height=30,
+            anchor="w",
+            fg_color=("gray85", "gray20")
+        )
+        self.status_bar.grid(row=2, column=0, sticky="ew", padx=5, pady=(0, 5))
+
         # Add tabs
         self.tab_dashboard = self.tabview.add("Dashboard")
         self.tab_clients = self.tabview.add("Clients")
@@ -214,6 +225,14 @@ class LandscapingApp(ctk.CTk):
         self.bind_all("<Button-4>", lambda e: _on_mousewheel(type('Event', (), {'delta': 120, 'widget': e.widget})()), add='+')
         self.bind_all("<Button-5>", lambda e: _on_mousewheel(type('Event', (), {'delta': -120, 'widget': e.widget})()), add='+')
 
+    def update_status(self, message, color=None):
+        """Update the status bar message."""
+        self.status_bar.configure(text=f"  {message}")
+        if color:
+            self.status_bar.configure(text_color=color)
+        else:
+            self.status_bar.configure(text_color=("gray10", "gray90"))
+
     def get_image_parser(self):
         """Get image parser with lazy initialization."""
         if self.image_parser is None:
@@ -230,112 +249,8 @@ class LandscapingApp(ctk.CTk):
         Args:
             filepath: Path to uploaded image file
         """
-        # Add to pending uploads queue (thread-safe)
+        # Add to pending uploads queue - will be picked up by QR dialog
         self.pending_mobile_uploads.append(filepath)
-
-        # Schedule processing on main thread
-        self.after(100, self.process_pending_mobile_uploads)
-
-    def process_pending_mobile_uploads(self):
-        """Process any pending mobile uploads on the main thread."""
-        if not self.pending_mobile_uploads:
-            return
-
-        # Get all pending uploads
-        uploads = self.pending_mobile_uploads.copy()
-        self.pending_mobile_uploads.clear()
-
-        # Process through the existing scan pipeline
-        if len(uploads) == 1:
-            self.process_single_mobile_upload(uploads[0])
-        else:
-            self.process_multiple_mobile_uploads(uploads)
-
-    def process_single_mobile_upload(self, filepath):
-        """Process a single mobile upload."""
-        parser = self.get_image_parser()
-
-        if not parser.is_available():
-            messagebox.showerror(
-                "Gemini API Not Configured",
-                "Please configure your Gemini API key in Settings to process mobile uploads."
-            )
-            return
-
-        # Show processing dialog
-        progress_dialog = ctk.CTkToplevel(self)
-        progress_dialog.title("Processing Mobile Upload")
-        progress_dialog.geometry("450x180")
-        progress_dialog.transient(self)
-
-        # Center dialog
-        progress_dialog.update_idletasks()
-        x = (progress_dialog.winfo_screenwidth() // 2) - 225
-        y = (progress_dialog.winfo_screenheight() // 2) - 90
-        progress_dialog.geometry(f"450x180+{x}+{y}")
-
-        progress_label = ctk.CTkLabel(
-            progress_dialog,
-            text="Processing image from mobile...\nThis may take a few seconds.",
-            font=ctk.CTkFont(size=13)
-        )
-        progress_label.pack(pady=20)
-
-        progress_bar = ctk.CTkProgressBar(progress_dialog, width=400, mode="indeterminate")
-        progress_bar.pack(pady=10)
-        progress_bar.start()
-
-        # Process in background
-        result_container = {'result': None}
-
-        def process():
-            result_container['result'] = parser.parse_image(filepath)
-
-        thread = threading.Thread(target=process, daemon=True)
-        thread.start()
-
-        def check_thread():
-            if thread.is_alive():
-                progress_dialog.after(100, check_thread)
-            else:
-                progress_bar.stop()
-                progress_dialog.destroy()
-
-                result = result_container['result']
-                if result['success'] and result['records']:
-                    # Switch to Visits tab
-                    self.tabview.set("Visits")
-                    # Show results dialog
-                    self.show_scanned_visits_dialog(result['records'], parser)
-                else:
-                    error_msg = result.get('error', 'No records found')
-                    messagebox.showerror("Processing Failed", f"Could not process mobile upload:\n{error_msg}")
-
-        progress_dialog.after(100, check_thread)
-
-    def process_multiple_mobile_uploads(self, filepaths):
-        """Process multiple mobile uploads."""
-        parser = self.get_image_parser()
-
-        if not parser.is_available():
-            messagebox.showerror(
-                "Gemini API Not Configured",
-                "Please configure your Gemini API key in Settings to process mobile uploads."
-            )
-            return
-
-        # Process all images and combine results
-        all_records = []
-        for filepath in filepaths:
-            result = parser.parse_image(filepath)
-            if result['success']:
-                all_records.extend(result['records'])
-
-        if all_records:
-            self.tabview.set("Visits")
-            self.show_scanned_visits_dialog(all_records, parser)
-        else:
-            messagebox.showwarning("No Records Found", "Could not find any visit records in the uploaded images.")
 
     def on_tab_change(self):
         """Handle tab change for lazy loading optimization."""
@@ -2278,7 +2193,7 @@ class LandscapingApp(ctk.CTk):
                 bill_to=entries['bill_to'].get().strip()
             )
 
-            messagebox.showinfo("Success", f"Client '{name}' added successfully!")
+            self.update_status(f"Client '{name}' added successfully!", "green")
             dialog.destroy()
             self.refresh_clients_list()
             self.refresh_dashboard()
@@ -2426,7 +2341,7 @@ class LandscapingApp(ctk.CTk):
             notes = self.group_entries['notes'].get("1.0", "end-1c")
 
             self.db.save_group_info(bill_to, email, phone, address, notes)
-            messagebox.showinfo("Success", "Group information saved!")
+            self.update_status("Group information saved!", "green")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save group info: {str(e)}")
 
@@ -2512,7 +2427,7 @@ class LandscapingApp(ctk.CTk):
                     updates[field] = entry.get().strip()
 
             self.db.update_client(client_id, **updates)
-            messagebox.showinfo("Success", "Client updated successfully!")
+            self.update_status("Client updated successfully!", "green")
             self.refresh_clients_list()
             self.refresh_dashboard()
         except Exception as e:
@@ -2522,7 +2437,7 @@ class LandscapingApp(ctk.CTk):
         """Deactivate a client."""
         if messagebox.askyesno("Confirm", "Deactivate this client? They will be hidden from active views."):
             self.db.deactivate_client(client_id)
-            messagebox.showinfo("Success", "Client deactivated")
+            self.update_status("Client deactivated", "green")
             self.refresh_clients_list()
             self.refresh_dashboard()
             self.show_client_placeholder()
@@ -2530,7 +2445,7 @@ class LandscapingApp(ctk.CTk):
     def activate_client(self, client_id: int):
         """Reactivate an inactive client."""
         self.db.activate_client(client_id)
-        messagebox.showinfo("Success", "Client reactivated")
+        self.update_status("Client reactivated", "green")
         self.refresh_clients_list()
         self.refresh_dashboard()
         self.show_client_details(client_id)
@@ -2542,7 +2457,7 @@ class LandscapingApp(ctk.CTk):
             "PERMANENTLY delete this client and all related data? This cannot be undone!"
         ):
             self.db.delete_client(client_id)
-            messagebox.showinfo("Success", "Client deleted permanently")
+            self.update_status("Client deleted permanently", "green")
             self.refresh_clients_list()
             self.refresh_dashboard()
             self.show_client_placeholder()
@@ -2716,7 +2631,7 @@ class LandscapingApp(ctk.CTk):
                 return
 
             self.db.add_client_material(client_id, selected_material['id'], custom_cost, multiplier)
-            messagebox.showinfo("Success", "Material added to client!")
+            self.update_status("Material added to client!", "green")
             dialog.destroy()
             self.show_client_details(client_id)
 
@@ -2734,7 +2649,7 @@ class LandscapingApp(ctk.CTk):
         """Remove a material from a client's configuration."""
         if messagebox.askyesno("Confirm", "Remove this material from the client?"):
             self.db.remove_client_material(client_id, material_id)
-            messagebox.showinfo("Success", "Material removed")
+            self.update_status("Material removed", "green")
             self.show_client_details(client_id)
 
     # ==================== VISITS TAB ====================
@@ -2783,18 +2698,6 @@ class LandscapingApp(ctk.CTk):
             height=40
         )
         add_visit_btn.pack(side=tk.LEFT, padx=10, pady=15)
-
-        # Scan Image button
-        scan_btn = ctk.CTkButton(
-            client_frame,
-            text="📷 Scan Image",
-            command=self.scan_visit_image,
-            font=ctk.CTkFont(size=14),
-            height=40,
-            fg_color="#2e7d32",
-            hover_color="#1b5e20"
-        )
-        scan_btn.pack(side=tk.LEFT, padx=10, pady=15)
 
         # QR Code button for mobile upload
         qr_btn = ctk.CTkButton(
@@ -3138,7 +3041,7 @@ class LandscapingApp(ctk.CTk):
                     except ValueError:
                         pass
 
-            messagebox.showinfo("Success", "Visit added successfully!")
+            self.update_status("Visit added successfully!", "green")
             dialog.destroy()
             self.load_client_visits(client_id)
             self.refresh_dashboard()
@@ -3157,7 +3060,7 @@ class LandscapingApp(ctk.CTk):
         """Delete a visit record."""
         if messagebox.askyesno("Confirm", "Delete this visit record?"):
             self.db.delete_visit(visit_id)
-            messagebox.showinfo("Success", "Visit deleted")
+            self.update_status("Visit deleted", "green")
             # Reload current client's visits
             client_name = self.visit_client_var.get()
             if client_name in self.visit_clients_data:
@@ -3278,18 +3181,22 @@ class LandscapingApp(ctk.CTk):
     # ==================== IMAGE SCANNING ====================
 
     def show_mobile_qr_code(self):
-        """Show QR code for mobile upload."""
+        """Show QR code for mobile upload with image preview."""
         dialog = ctk.CTkToplevel(self)
         dialog.title("Mobile Upload - Scan QR Code")
-        dialog.geometry("500x650")
+        dialog.geometry("700x750")
         dialog.transient(self)
         dialog.grab_set()
 
         # Center dialog
         dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - 250
-        y = (dialog.winfo_screenheight() // 2) - 325
-        dialog.geometry(f"500x650+{x}+{y}")
+        x = (dialog.winfo_screenwidth() // 2) - 350
+        y = (dialog.winfo_screenheight() // 2) - 375
+        dialog.geometry(f"700x750+{x}+{y}")
+
+        # Store uploaded images
+        dialog.uploaded_images = []
+        dialog.image_refs = []  # Keep PIL image references
 
         # Header
         header = ctk.CTkLabel(
@@ -3297,18 +3204,16 @@ class LandscapingApp(ctk.CTk):
             text="📱 Upload Photos from Mobile",
             font=ctk.CTkFont(size=18, weight="bold")
         )
-        header.pack(pady=20)
+        header.pack(pady=15)
 
         # Instructions
-        instructions = ctk.CTkTextbox(dialog, height=120, fg_color="transparent")
-        instructions.pack(padx=20, pady=10, fill="x")
+        instructions = ctk.CTkTextbox(dialog, height=100, fg_color="transparent")
+        instructions.pack(padx=20, pady=5, fill="x")
         instructions.insert("1.0", """Instructions:
-1. Open your phone's camera app
-2. Scan the QR code below
-3. Take photos of your visit records
-4. Photos will automatically appear in the app
-
-The upload page works on any device with a camera!""")
+1. Scan the QR code with your phone's camera
+2. Take photos of your visit records
+3. Uploaded photos will appear below
+4. Click "Process Images" when done""")
         instructions.configure(state="disabled")
 
         # Generate and display QR code
@@ -3318,13 +3223,13 @@ The upload page works on any device with a camera!""")
             # Convert to PhotoImage for display
             from PIL import Image, ImageTk
             qr_img = Image.open(qr_buffer)
-            qr_img = qr_img.resize((300, 300), Image.Resampling.LANCZOS)
+            qr_img = qr_img.resize((200, 200), Image.Resampling.LANCZOS)
             qr_photo = ImageTk.PhotoImage(qr_img)
 
             # Use CTkLabel to avoid color issues
             qr_label = ctk.CTkLabel(dialog, image=qr_photo, text="")
             qr_label.image = qr_photo  # Keep reference
-            qr_label.pack(pady=20)
+            qr_label.pack(pady=10)
 
         except Exception as e:
             error_label = ctk.CTkLabel(
@@ -3332,43 +3237,115 @@ The upload page works on any device with a camera!""")
                 text=f"Error generating QR code:\n{str(e)}",
                 text_color="red"
             )
-            error_label.pack(pady=20)
+            error_label.pack(pady=10)
 
         # URL display
         url = self.mobile_server.get_url()
-        url_frame = ctk.CTkFrame(dialog)
-        url_frame.pack(pady=10, padx=20, fill="x")
-
         url_label = ctk.CTkLabel(
-            url_frame,
-            text=f"Or visit: {url}",
-            font=ctk.CTkFont(size=12)
-        )
-        url_label.pack(pady=10)
-
-        # Copy URL button
-        def copy_url():
-            dialog.clipboard_clear()
-            dialog.clipboard_append(url)
-            copy_btn.configure(text="✓ Copied!")
-            dialog.after(2000, lambda: copy_btn.configure(text="Copy URL"))
-
-        copy_btn = ctk.CTkButton(
-            url_frame,
-            text="Copy URL",
-            command=copy_url,
-            width=120
-        )
-        copy_btn.pack(pady=5)
-
-        # Status
-        status_label = ctk.CTkLabel(
             dialog,
-            text=f"Server running at {url}",
-            font=ctk.CTkFont(size=10),
-            text_color="green"
+            text=f"Or visit: {url}",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
         )
-        status_label.pack(pady=10)
+        url_label.pack(pady=5)
+
+        # Uploaded images section
+        upload_label = ctk.CTkLabel(
+            dialog,
+            text="Uploaded Images (0)",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        upload_label.pack(pady=(15, 5))
+
+        # Scrollable frame for image thumbnails
+        images_frame = ctk.CTkScrollableFrame(dialog, height=200)
+        images_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        # Function to check for new uploads
+        def check_uploads():
+            if not dialog.winfo_exists():
+                return
+
+            # Check for pending uploads
+            if self.pending_mobile_uploads:
+                uploads = self.pending_mobile_uploads.copy()
+                self.pending_mobile_uploads.clear()
+
+                from PIL import Image, ImageTk
+                for filepath in uploads:
+                    # Add to list
+                    dialog.uploaded_images.append(filepath)
+
+                    # Create thumbnail
+                    try:
+                        img = Image.open(filepath)
+                        img.thumbnail((150, 150))
+                        photo = ImageTk.PhotoImage(img)
+
+                        # Create frame for this image
+                        img_container = ctk.CTkFrame(images_frame)
+                        img_container.pack(side=tk.LEFT, padx=5, pady=5)
+
+                        img_label = ctk.CTkLabel(img_container, image=photo, text="")
+                        img_label.image = photo
+                        img_label.pack()
+
+                        dialog.image_refs.append(photo)
+                    except:
+                        pass
+
+                # Update count
+                upload_label.configure(text=f"Uploaded Images ({len(dialog.uploaded_images)})")
+                self.update_status(f"Received {len(uploads)} image(s)", "green")
+
+            # Schedule next check
+            dialog.after(500, check_uploads)
+
+        # Start checking for uploads
+        check_uploads()
+
+        # Process button
+        def process_images():
+            if not dialog.uploaded_images:
+                self.update_status("No images to process", "orange")
+                return
+
+            dialog.destroy()
+            self.update_status(f"Processing {len(dialog.uploaded_images)} image(s)...", "blue")
+
+            # Process all images
+            parser = self.get_image_parser()
+            if not parser.is_available():
+                messagebox.showerror(
+                    "Gemini API Not Configured",
+                    "Please configure your Gemini API key in Settings."
+                )
+                self.update_status("Processing cancelled - No API key", "red")
+                return
+
+            all_records = []
+            for filepath in dialog.uploaded_images:
+                result = parser.parse_image(filepath)
+                if result['success']:
+                    all_records.extend(result['records'])
+
+            if all_records:
+                self.tabview.set("Visits")
+                self.show_scanned_visits_dialog(all_records, parser)
+                self.update_status(f"Found {len(all_records)} record(s) in images", "green")
+            else:
+                self.update_status("No visit records found in images", "orange")
+
+        process_btn = ctk.CTkButton(
+            dialog,
+            text="Process Images",
+            command=process_images,
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="green",
+            hover_color="darkgreen"
+        )
+        process_btn.pack(pady=10, padx=20, fill="x")
 
         # Close button
         close_btn = ctk.CTkButton(
@@ -4519,7 +4496,7 @@ The upload page works on any device with a camera!""")
                 needs_review=0
             )
 
-            messagebox.showinfo("Success", "Visit updated and marked as reviewed!")
+            self.update_status("Visit updated and marked as reviewed!", "green")
             self.refresh_todo_list()
             self.refresh_dashboard()
 
@@ -4530,7 +4507,7 @@ The upload page works on any device with a camera!""")
         """Delete a flagged visit."""
         if messagebox.askyesno("Confirm Delete", "Delete this flagged visit?"):
             self.db.delete_visit(visit_id)
-            messagebox.showinfo("Success", "Visit deleted")
+            self.update_status("Visit deleted", "green")
             self.refresh_todo_list()
             self.refresh_dashboard()
 
@@ -4887,7 +4864,7 @@ The upload page works on any device with a camera!""")
                 material_type=type_var.get()
             )
 
-            messagebox.showinfo("Success", "Material/service added successfully!")
+            self.update_status("Material/service added successfully!", "green")
             dialog.destroy()
             self.refresh_materials_list()
 
@@ -5019,7 +4996,7 @@ The upload page works on any device with a camera!""")
                 material_type=type_var.get()
             )
 
-            messagebox.showinfo("Success", "Material/service updated successfully!")
+            self.update_status("Material/service updated successfully!", "green")
             dialog.destroy()
             self.refresh_materials_list()
 
@@ -5038,7 +5015,7 @@ The upload page works on any device with a camera!""")
         if messagebox.askyesno("Confirm Delete", "Delete this material/service from the catalog?"):
             try:
                 self.db.delete_material(material_id)
-                messagebox.showinfo("Success", "Material deleted")
+                self.update_status("Material deleted", "green")
                 self.refresh_materials_list()
             except Exception as e:
                 messagebox.showerror("Error", f"Could not delete material: {str(e)}")
@@ -5868,9 +5845,9 @@ Note: Requires Gemini API key (configure in Settings)
                 # Apply theme immediately
                 if new_theme != current_theme:
                     ctk.set_default_color_theme(new_theme)
-                    messagebox.showinfo("Success", "Settings saved! Color theme will fully apply after restart.")
+                    self.update_status("Settings saved! Color theme will fully apply after restart.", "green")
                 else:
-                    messagebox.showinfo("Success", "Settings saved successfully!")
+                    self.update_status("Settings saved successfully!", "green")
 
                 self.refresh_dashboard()  # Refresh dashboard to show updated calculations
                 dialog.destroy()
@@ -5907,7 +5884,7 @@ Note: Requires Gemini API key (configure in Settings)
         self.refresh_materials_list()
         self.refresh_visit_client_dropdown()
         self.refresh_todo_list()
-        messagebox.showinfo("Refreshed", "All data refreshed successfully!")
+        self.update_status("All data refreshed successfully!", "green")
 
     def on_closing(self):
         """Handle application closing."""
