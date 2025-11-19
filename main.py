@@ -6,6 +6,7 @@ import customtkinter as ctk
 from database import Database
 from excel_importer import ExcelImporter
 from gemini_vision import VisitImageParser
+from mobile_server import MobileServer
 from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
@@ -63,6 +64,11 @@ class LandscapingApp(ctk.CTk):
         # Initialize importers (lazy load image parser only when needed)
         self.excel_importer = ExcelImporter(self.db)
         self.image_parser = None  # Lazy load when needed
+
+        # Initialize mobile server for QR code image uploads
+        self.mobile_server = MobileServer(callback=self.handle_mobile_upload)
+        self.mobile_server.start()
+        self.pending_mobile_uploads = []  # Queue for mobile uploads
 
         # Configure window
         self.title("Landscaping Client Tracker")
@@ -216,6 +222,120 @@ class LandscapingApp(ctk.CTk):
                 api_key=gemini_api_key if gemini_api_key else None
             )
         return self.image_parser
+
+    def handle_mobile_upload(self, filepath):
+        """
+        Handle image uploaded from mobile device.
+
+        Args:
+            filepath: Path to uploaded image file
+        """
+        # Add to pending uploads queue (thread-safe)
+        self.pending_mobile_uploads.append(filepath)
+
+        # Schedule processing on main thread
+        self.after(100, self.process_pending_mobile_uploads)
+
+    def process_pending_mobile_uploads(self):
+        """Process any pending mobile uploads on the main thread."""
+        if not self.pending_mobile_uploads:
+            return
+
+        # Get all pending uploads
+        uploads = self.pending_mobile_uploads.copy()
+        self.pending_mobile_uploads.clear()
+
+        # Process through the existing scan pipeline
+        if len(uploads) == 1:
+            self.process_single_mobile_upload(uploads[0])
+        else:
+            self.process_multiple_mobile_uploads(uploads)
+
+    def process_single_mobile_upload(self, filepath):
+        """Process a single mobile upload."""
+        parser = self.get_image_parser()
+
+        if not parser.is_available():
+            messagebox.showerror(
+                "Gemini API Not Configured",
+                "Please configure your Gemini API key in Settings to process mobile uploads."
+            )
+            return
+
+        # Show processing dialog
+        progress_dialog = ctk.CTkToplevel(self)
+        progress_dialog.title("Processing Mobile Upload")
+        progress_dialog.geometry("450x180")
+        progress_dialog.transient(self)
+
+        # Center dialog
+        progress_dialog.update_idletasks()
+        x = (progress_dialog.winfo_screenwidth() // 2) - 225
+        y = (progress_dialog.winfo_screenheight() // 2) - 90
+        progress_dialog.geometry(f"450x180+{x}+{y}")
+
+        progress_label = ctk.CTkLabel(
+            progress_dialog,
+            text="Processing image from mobile...\nThis may take a few seconds.",
+            font=ctk.CTkFont(size=13)
+        )
+        progress_label.pack(pady=20)
+
+        progress_bar = ctk.CTkProgressBar(progress_dialog, width=400, mode="indeterminate")
+        progress_bar.pack(pady=10)
+        progress_bar.start()
+
+        # Process in background
+        result_container = {'result': None}
+
+        def process():
+            result_container['result'] = parser.parse_image(filepath)
+
+        thread = threading.Thread(target=process, daemon=True)
+        thread.start()
+
+        def check_thread():
+            if thread.is_alive():
+                progress_dialog.after(100, check_thread)
+            else:
+                progress_bar.stop()
+                progress_dialog.destroy()
+
+                result = result_container['result']
+                if result['success'] and result['records']:
+                    # Switch to Visits tab
+                    self.tabview.set("Visits")
+                    # Show results dialog
+                    self.show_scanned_visits_dialog(result['records'], parser)
+                else:
+                    error_msg = result.get('error', 'No records found')
+                    messagebox.showerror("Processing Failed", f"Could not process mobile upload:\n{error_msg}")
+
+        progress_dialog.after(100, check_thread)
+
+    def process_multiple_mobile_uploads(self, filepaths):
+        """Process multiple mobile uploads."""
+        parser = self.get_image_parser()
+
+        if not parser.is_available():
+            messagebox.showerror(
+                "Gemini API Not Configured",
+                "Please configure your Gemini API key in Settings to process mobile uploads."
+            )
+            return
+
+        # Process all images and combine results
+        all_records = []
+        for filepath in filepaths:
+            result = parser.parse_image(filepath)
+            if result['success']:
+                all_records.extend(result['records'])
+
+        if all_records:
+            self.tabview.set("Visits")
+            self.show_scanned_visits_dialog(all_records, parser)
+        else:
+            messagebox.showwarning("No Records Found", "Could not find any visit records in the uploaded images.")
 
     def on_tab_change(self):
         """Handle tab change for lazy loading optimization."""
@@ -2676,6 +2796,18 @@ class LandscapingApp(ctk.CTk):
         )
         scan_btn.pack(side=tk.LEFT, padx=10, pady=15)
 
+        # QR Code button for mobile upload
+        qr_btn = ctk.CTkButton(
+            client_frame,
+            text="📱 Mobile Upload",
+            command=self.show_mobile_qr_code,
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="#1976d2",
+            hover_color="#0d47a1"
+        )
+        qr_btn.pack(side=tk.LEFT, padx=10, pady=15)
+
         # Visits list
         self.visits_scroll = ctk.CTkScrollableFrame(self.tab_visits)
         self.visits_scroll.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 20))
@@ -3144,6 +3276,107 @@ class LandscapingApp(ctk.CTk):
         ).pack(pady=10)
 
     # ==================== IMAGE SCANNING ====================
+
+    def show_mobile_qr_code(self):
+        """Show QR code for mobile upload."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Mobile Upload - Scan QR Code")
+        dialog.geometry("500x650")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - 250
+        y = (dialog.winfo_screenheight() // 2) - 325
+        dialog.geometry(f"500x650+{x}+{y}")
+
+        # Header
+        header = ctk.CTkLabel(
+            dialog,
+            text="📱 Upload Photos from Mobile",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        header.pack(pady=20)
+
+        # Instructions
+        instructions = ctk.CTkTextbox(dialog, height=120, fg_color="transparent")
+        instructions.pack(padx=20, pady=10, fill="x")
+        instructions.insert("1.0", """Instructions:
+1. Open your phone's camera app
+2. Scan the QR code below
+3. Take photos of your visit records
+4. Photos will automatically appear in the app
+
+The upload page works on any device with a camera!""")
+        instructions.configure(state="disabled")
+
+        # Generate and display QR code
+        try:
+            qr_buffer = self.mobile_server.generate_qr_code()
+
+            # Convert to PhotoImage for display
+            from PIL import Image, ImageTk
+            qr_img = Image.open(qr_buffer)
+            qr_img = qr_img.resize((300, 300), Image.Resampling.LANCZOS)
+            qr_photo = ImageTk.PhotoImage(qr_img)
+
+            qr_label = tk.Label(dialog, image=qr_photo, bg=dialog._fg_color)
+            qr_label.image = qr_photo  # Keep reference
+            qr_label.pack(pady=20)
+
+        except Exception as e:
+            error_label = ctk.CTkLabel(
+                dialog,
+                text=f"Error generating QR code:\n{str(e)}",
+                text_color="red"
+            )
+            error_label.pack(pady=20)
+
+        # URL display
+        url = self.mobile_server.get_url()
+        url_frame = ctk.CTkFrame(dialog)
+        url_frame.pack(pady=10, padx=20, fill="x")
+
+        url_label = ctk.CTkLabel(
+            url_frame,
+            text=f"Or visit: {url}",
+            font=ctk.CTkFont(size=12)
+        )
+        url_label.pack(pady=10)
+
+        # Copy URL button
+        def copy_url():
+            dialog.clipboard_clear()
+            dialog.clipboard_append(url)
+            copy_btn.configure(text="✓ Copied!")
+            dialog.after(2000, lambda: copy_btn.configure(text="Copy URL"))
+
+        copy_btn = ctk.CTkButton(
+            url_frame,
+            text="Copy URL",
+            command=copy_url,
+            width=120
+        )
+        copy_btn.pack(pady=5)
+
+        # Status
+        status_label = ctk.CTkLabel(
+            dialog,
+            text=f"Server running at {url}",
+            font=ctk.CTkFont(size=10),
+            text_color="green"
+        )
+        status_label.pack(pady=10)
+
+        # Close button
+        close_btn = ctk.CTkButton(
+            dialog,
+            text="Close",
+            command=dialog.destroy,
+            width=120
+        )
+        close_btn.pack(pady=10)
 
     def scan_visit_image(self):
         """Open file dialog to scan an image for visit data."""
@@ -5677,6 +5910,12 @@ Note: Requires Gemini API key (configure in Settings)
 
     def on_closing(self):
         """Handle application closing."""
+        # Clean up mobile server
+        try:
+            self.mobile_server.stop()
+            self.mobile_server.cleanup()
+        except:
+            pass
         self.db.close()
         self.destroy()
 
