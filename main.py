@@ -1478,12 +1478,13 @@ class LandscapingApp(ctk.CTk):
         if not client:
             return
 
-        # Create tabview for Client Details and Aliases
+        # Create tabview for Client Details, Aliases, and Contracts
         tabview = ctk.CTkTabview(self.client_details_frame)
         tabview.pack(fill="both", expand=True, padx=5, pady=5)
 
         tab_details = tabview.add("Client Details")
         tab_aliases = tabview.add("Aliases")
+        tab_contracts = tabview.add("Contracts")
 
         # ==================== CLIENT DETAILS TAB ====================
         row = 0
@@ -1710,6 +1711,299 @@ class LandscapingApp(ctk.CTk):
                 font=ctk.CTkFont(size=12),
                 text_color="gray"
             ).pack(pady=20)
+
+        # ==================== CONTRACTS TAB ====================
+        self.show_client_contracts_list(client_id, tab_contracts)
+
+    def show_client_contracts_list(self, client_id: int, parent_frame):
+        """Show list of contracts for a client."""
+        # Clear existing widgets
+        for widget in parent_frame.winfo_children():
+            widget.destroy()
+
+        client = self.db.get_client(client_id)
+        if not client:
+            return
+
+        # Header
+        header = ctk.CTkLabel(
+            parent_frame,
+            text=f"Contracts & Bids for {client['name']}",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        header.pack(pady=15)
+
+        # New contract button
+        btn_frame = ctk.CTkFrame(parent_frame, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=10)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="+ New Contract/Bid",
+            command=lambda: self.create_new_contract(client_id, parent_frame),
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="green",
+            hover_color="darkgreen"
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Get contracts (latest versions only)
+        contracts = self.db.get_client_contracts(client_id, include_versions=False)
+
+        # Contracts list
+        contracts_scroll = ctk.CTkScrollableFrame(parent_frame, height=400)
+        contracts_scroll.pack(fill="both", expand=True, padx=20, pady=10)
+
+        if contracts:
+            for contract in contracts:
+                contract_frame = ctk.CTkFrame(contracts_scroll, border_width=2)
+                contract_frame.pack(fill="x", pady=8, padx=5)
+
+                # Contract info
+                info_frame = ctk.CTkFrame(contract_frame, fg_color="transparent")
+                info_frame.pack(fill="x", padx=10, pady=10)
+
+                # Title and version
+                title_text = f"{contract['title']} (v{contract['version']})"
+                title_label = ctk.CTkLabel(
+                    info_frame,
+                    text=title_text,
+                    font=ctk.CTkFont(size=14, weight="bold")
+                )
+                title_label.pack(anchor="w")
+
+                # Type, status, amount
+                details_text = f"Type: {contract['contract_type'].title()}  |  Status: {contract['status'].title()}  |  Total: ${contract['total_amount']:.2f}"
+                details_label = ctk.CTkLabel(
+                    info_frame,
+                    text=details_text,
+                    font=ctk.CTkFont(size=11),
+                    text_color="gray"
+                )
+                details_label.pack(anchor="w")
+
+                # Dates
+                if contract['created_date']:
+                    date_str = contract['created_date'][:10]  # Just the date part
+                    date_label = ctk.CTkLabel(
+                        info_frame,
+                        text=f"Created: {date_str}",
+                        font=ctk.CTkFont(size=10),
+                        text_color="gray"
+                    )
+                    date_label.pack(anchor="w")
+
+                # Buttons
+                btn_frame = ctk.CTkFrame(contract_frame, fg_color="transparent")
+                btn_frame.pack(fill="x", padx=10, pady=(0, 10))
+
+                ctk.CTkButton(
+                    btn_frame,
+                    text="Open",
+                    command=lambda c=contract: self.open_contract(c['id'], client_id, parent_frame),
+                    width=100,
+                    height=32
+                ).pack(side=tk.LEFT, padx=5)
+
+                ctk.CTkButton(
+                    btn_frame,
+                    text="Delete",
+                    command=lambda c=contract: self.delete_contract_confirm(c['id'], client_id, parent_frame),
+                    fg_color="red",
+                    hover_color="darkred",
+                    width=100,
+                    height=32
+                ).pack(side=tk.LEFT, padx=5)
+
+        else:
+            no_contracts_label = ctk.CTkLabel(
+                contracts_scroll,
+                text="No contracts yet. Click 'New Contract/Bid' to create one.",
+                font=ctk.CTkFont(size=12),
+                text_color="gray"
+            )
+            no_contracts_label.pack(pady=40)
+
+    def create_new_contract(self, client_id: int, parent_frame):
+        """Create a new contract for a client."""
+        # For now, create a basic maintenance contract
+        # In the full version, we'd ask user for contract type and title
+        import datetime
+        title = f"Contract - {datetime.datetime.now().strftime('%Y-%m-%d')}"
+
+        contract_id = self.db.create_contract(
+            client_id=client_id,
+            contract_type="maintenance",
+            title=title,
+            status="draft"
+        )
+
+        self.open_contract(contract_id, client_id, parent_frame)
+
+    def delete_contract_confirm(self, contract_id: int, client_id: int, parent_frame):
+        """Confirm and delete a contract."""
+        if messagebox.askyesno("Delete Contract", "Are you sure you want to delete this contract? This cannot be undone."):
+            self.db.delete_contract(contract_id)
+            self.update_status("Contract deleted", "green")
+            self.show_client_contracts_list(client_id, parent_frame)
+
+    def open_contract(self, contract_id: int, client_id: int, parent_frame):
+        """Open and display a contract for editing."""
+        # Clear existing widgets
+        for widget in parent_frame.winfo_children():
+            widget.destroy()
+
+        contract = self.db.get_contract(contract_id)
+        if not contract:
+            return
+
+        # Header with back button
+        header_frame = ctk.CTkFrame(parent_frame, fg_color="transparent")
+        header_frame.pack(fill="x", padx=10, pady=10)
+
+        ctk.CTkButton(
+            header_frame,
+            text="← Back to Contracts",
+            command=lambda: self.show_client_contracts_list(client_id, parent_frame),
+            width=150,
+            height=32
+        ).pack(side=tk.LEFT, padx=5)
+
+        header_label = ctk.CTkLabel(
+            header_frame,
+            text=f"Contract: {contract['title']}",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        header_label.pack(side=tk.LEFT, padx=20)
+
+        # Version dropdown
+        versions = self.db.get_contract_versions(contract_id)
+        if len(versions) > 1:
+            version_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+            version_frame.pack(side=tk.RIGHT, padx=10)
+
+            ctk.CTkLabel(
+                version_frame,
+                text="Version:",
+                font=ctk.CTkFont(size=12)
+            ).pack(side=tk.LEFT, padx=5)
+
+            version_var = tk.StringVar(value=f"v{contract['version']}")
+            version_options = [f"v{v['version']}" for v in versions]
+
+            def on_version_change(choice):
+                # Find the contract with this version
+                for v in versions:
+                    if f"v{v['version']}" == choice:
+                        self.open_contract(v['id'], client_id, parent_frame)
+                        break
+
+            version_menu = ctk.CTkOptionMenu(
+                version_frame,
+                values=version_options,
+                variable=version_var,
+                command=on_version_change,
+                width=100
+            )
+            version_menu.pack(side=tk.LEFT, padx=5)
+
+        # Main content scrollable frame
+        main_scroll = ctk.CTkScrollableFrame(parent_frame)
+        main_scroll.pack(fill="both", expand=True, padx=10, pady=10)
+        main_scroll._parent_canvas.configure(yscrollincrement=20)
+
+        # Contract info section
+        info_frame = ctk.CTkFrame(main_scroll)
+        info_frame.pack(fill="x", padx=10, pady=10)
+
+        # Store entry widgets
+        self.contract_entries = {}
+
+        # Title
+        row = 0
+        ctk.CTkLabel(info_frame, text="Title:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        title_entry = ctk.CTkEntry(info_frame, width=300)
+        title_entry.insert(0, contract['title'])
+        title_entry.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        self.contract_entries['title'] = title_entry
+        row += 1
+
+        # Type
+        ctk.CTkLabel(info_frame, text="Type:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        type_var = tk.StringVar(value=contract['contract_type'])
+        type_menu = ctk.CTkOptionMenu(info_frame, values=["maintenance", "project", "bid"], variable=type_var, width=200)
+        type_menu.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        self.contract_entries['contract_type'] = type_var
+        row += 1
+
+        # Status
+        ctk.CTkLabel(info_frame, text="Status:", font=ctk.CTkFont(size=12, weight="bold")).grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        status_var = tk.StringVar(value=contract['status'])
+        status_menu = ctk.CTkOptionMenu(info_frame, values=["draft", "sent", "signed", "expired"], variable=status_var, width=200)
+        status_menu.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        self.contract_entries['status'] = status_var
+        row += 1
+
+        # Continue building the contract interface...
+        # Items, Warranties, Terms sections will go here
+        # For now, let's add a save button
+
+        # Action buttons
+        action_frame = ctk.CTkFrame(parent_frame, fg_color="transparent")
+        action_frame.pack(fill="x", padx=10, pady=10)
+
+        ctk.CTkButton(
+            action_frame,
+            text="Save Contract",
+            command=lambda: self.save_contract_changes(contract_id, client_id, parent_frame),
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="green",
+            hover_color="darkgreen",
+            width=150
+        ).pack(side=tk.LEFT, padx=5)
+
+        ctk.CTkButton(
+            action_frame,
+            text="Generate PDF",
+            command=lambda: self.generate_contract_pdf(contract_id),
+            font=ctk.CTkFont(size=14),
+            height=40,
+            fg_color="blue",
+            hover_color="darkblue",
+            width=150
+        ).pack(side=tk.LEFT, padx=5)
+
+        ctk.CTkButton(
+            action_frame,
+            text="Create New Version",
+            command=lambda: self.create_contract_new_version(contract_id, client_id, parent_frame),
+            font=ctk.CTkFont(size=14),
+            height=40,
+            width=170
+        ).pack(side=tk.LEFT, padx=5)
+
+    def save_contract_changes(self, contract_id: int, client_id: int, parent_frame):
+        """Save changes to a contract."""
+        updates = {
+            'title': self.contract_entries['title'].get(),
+            'contract_type': self.contract_entries['contract_type'].get(),
+            'status': self.contract_entries['status'].get()
+        }
+
+        self.db.update_contract(contract_id, **updates)
+        self.update_status("Contract saved", "green")
+
+    def create_contract_new_version(self, contract_id: int, client_id: int, parent_frame):
+        """Create a new version of a contract."""
+        new_contract_id = self.db.create_contract_version(contract_id)
+        self.update_status(f"Created new version", "green")
+        self.open_contract(new_contract_id, client_id, parent_frame)
+
+    def generate_contract_pdf(self, contract_id: int):
+        """Generate PDF for a contract."""
+        # Placeholder for PDF generation
+        self.update_status("PDF generation coming soon", "orange")
 
     def rebuild_materials_table(self, existing_materials, num_empty_rows=1):
         """Build or rebuild the materials table."""
