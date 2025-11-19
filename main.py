@@ -80,6 +80,9 @@ class LandscapingApp(ctk.CTk):
         except:
             pass
 
+        # Configure faster scroll speed globally
+        self.setup_fast_scrolling()
+
         # Configure grid
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -176,6 +179,34 @@ class LandscapingApp(ctk.CTk):
         except Exception as e:
             print(f"Could not set application icon: {e}")
             # Don't crash if icon setting fails
+
+    def setup_fast_scrolling(self):
+        """Configure faster scroll speed for all scrollable widgets."""
+        # Increase scroll speed multiplier (default is typically 1-2 lines, we'll do 5)
+        scroll_speed = 5
+
+        def _on_mousewheel(event):
+            """Handle mousewheel scrolling with increased speed."""
+            # Find the widget under the mouse
+            widget = event.widget
+
+            # Try to find parent scrollable frame
+            while widget:
+                if isinstance(widget, ctk.CTkScrollableFrame):
+                    # Calculate scroll amount (negative for scroll up, positive for scroll down)
+                    if event.delta > 0:
+                        widget._parent_canvas.yview_scroll(-scroll_speed, "units")
+                    else:
+                        widget._parent_canvas.yview_scroll(scroll_speed, "units")
+                    return "break"
+                widget = widget.master if hasattr(widget, 'master') else None
+
+        # Bind mousewheel to the main window
+        # This will apply to all widgets in the application
+        self.bind_all("<MouseWheel>", _on_mousewheel, add='+')
+        # For Linux
+        self.bind_all("<Button-4>", lambda e: _on_mousewheel(type('Event', (), {'delta': 120, 'widget': e.widget})()), add='+')
+        self.bind_all("<Button-5>", lambda e: _on_mousewheel(type('Event', (), {'delta': -120, 'widget': e.widget})()), add='+')
 
     def get_image_parser(self):
         """Get image parser with lazy initialization."""
