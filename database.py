@@ -225,6 +225,52 @@ class Database:
             )
         """)
 
+        # Warranty templates
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS warranties (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                duration_text TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Terms templates
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS terms (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                category TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Contract warranties (many-to-many)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS contract_warranties (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                contract_id INTEGER NOT NULL,
+                warranty_id INTEGER NOT NULL,
+                custom_text TEXT,
+                FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE,
+                FOREIGN KEY (warranty_id) REFERENCES warranties(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Contract terms (many-to-many)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS contract_terms (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                contract_id INTEGER NOT NULL,
+                term_id INTEGER NOT NULL,
+                custom_text TEXT,
+                FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE,
+                FOREIGN KEY (term_id) REFERENCES terms(id) ON DELETE CASCADE
+            )
+        """)
+
         self.connection.commit()
 
         # Add client_type column if it doesn't exist
