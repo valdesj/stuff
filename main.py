@@ -2468,6 +2468,7 @@ class LandscapingApp(ctk.CTk):
         # Scrollable frame for content
         scroll_frame = ctk.CTkScrollableFrame(dialog, height=350)
         scroll_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        scroll_frame._parent_canvas.configure(yscrollincrement=20)
 
         # Material selection
         material_label = ctk.CTkLabel(scroll_frame, text="Material:", font=ctk.CTkFont(size=14))
@@ -2830,6 +2831,7 @@ class LandscapingApp(ctk.CTk):
         # Scrollable frame for content
         scroll_frame = ctk.CTkScrollableFrame(dialog, height=550)
         scroll_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        scroll_frame._parent_canvas.configure(yscrollincrement=20)
 
         # Date
         date_label = ctk.CTkLabel(scroll_frame, text="Date (MM/DD/YYYY):", font=ctk.CTkFont(size=12))
@@ -3277,6 +3279,9 @@ class LandscapingApp(ctk.CTk):
         # Scrollable frame for records
         scroll_frame = ctk.CTkScrollableFrame(dialog, height=550)
         scroll_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        # Optimize scrolling performance to prevent blur
+        scroll_frame._parent_canvas.configure(yscrollincrement=20)
 
         # Get all clients for matching
         all_clients = self.db.get_all_clients(active_only=False)
@@ -4563,6 +4568,7 @@ class LandscapingApp(ctk.CTk):
         # Scrollable frame for content
         scroll_frame = ctk.CTkScrollableFrame(dialog, height=400)
         scroll_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        scroll_frame._parent_canvas.configure(yscrollincrement=20)
 
         # Name
         name_label = ctk.CTkLabel(scroll_frame, text="Name *:", font=ctk.CTkFont(size=14))
@@ -5027,6 +5033,7 @@ Note: Requires Gemini API key (configure in Settings)
 
         visits_scroll = ctk.CTkScrollableFrame(dialog, height=350)
         visits_scroll.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        visits_scroll._parent_canvas.configure(yscrollincrement=20)
 
         # Store editable visit data
         self.editable_visits = []
