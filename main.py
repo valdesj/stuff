@@ -72,8 +72,26 @@ class SplashScreen:
             png_path = os.path.join(script_dir, 'mJorgesLogo.png')
 
             if os.path.exists(png_path):
-                # Load image with transparency
+                # Load image
                 img = Image.open(png_path)
+
+                # Convert to RGBA if not already
+                if img.mode != 'RGBA':
+                    img = img.convert('RGBA')
+
+                # Convert white background to transparent
+                datas = img.getdata()
+                newData = []
+                for item in datas:
+                    # Change all white (also shades of white) pixels to transparent
+                    # Check if pixel is close to white (R, G, B all > 240)
+                    if item[0] > 240 and item[1] > 240 and item[2] > 240:
+                        # Make it fully transparent
+                        newData.append((255, 255, 255, 0))
+                    else:
+                        newData.append(item)
+
+                img.putdata(newData)
 
                 # Resize if too large (max 400x400)
                 max_size = 400
