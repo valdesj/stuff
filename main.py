@@ -1123,6 +1123,11 @@ class LandscapingApp(ctk.CTk):
         for widget in self.viz_canvas_frame.winfo_children():
             widget.destroy()
 
+        # Close any existing matplotlib figure to prevent accumulation
+        if hasattr(self, '_current_viz_figure') and self._current_viz_figure:
+            plt.close(self._current_viz_figure)
+            self._current_viz_figure = None
+
         if not self.current_viz_client_id:
             return
 
@@ -1187,6 +1192,7 @@ class LandscapingApp(ctk.CTk):
 
         # Create matplotlib figure
         fig = Figure(figsize=(8, 3), dpi=100, facecolor='#2b2b2b')
+        self._current_viz_figure = fig  # Store reference for cleanup
         ax = fig.add_subplot(111)
         ax.set_facecolor('#2b2b2b')
 
