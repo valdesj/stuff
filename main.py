@@ -1218,11 +1218,12 @@ class LandscapingApp(ctk.CTk):
 
         fig.tight_layout(pad=1.5)
 
-        # Embed in container - use pack for simplicity
+        # Embed in container with explicit size - no scaling
         canvas = FigureCanvasTkAgg(fig, master=self.viz_container)
         canvas.draw()
         self.viz_canvas_widget = canvas.get_tk_widget()
-        self.viz_canvas_widget.pack(fill="both", expand=True)
+        # Place at explicit position with explicit size to prevent scaling
+        self.viz_canvas_widget.place(x=0, y=0, width=800, height=300)
 
     def create_client_card(self, parent, stats, row):
         """Create a visual card showing client statistics."""
