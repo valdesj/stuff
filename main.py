@@ -10,7 +10,6 @@ from mobile_server import MobileServer
 from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
-from tkcalendar import DateEntry
 from typing import Optional, List, Dict
 from collections import defaultdict
 import threading
@@ -146,6 +145,176 @@ class SplashScreen:
             self.splash.destroy()
         except:
             pass
+
+
+class ModernCalendar(ctk.CTkFrame):
+    """Modern Windows 11-style calendar widget."""
+
+    def __init__(self, parent, initial_date=None):
+        super().__init__(parent, fg_color="transparent")
+
+        # Current date being viewed
+        self.current_date = initial_date if initial_date else datetime.now().date()
+        self.selected_date = self.current_date
+        self.today = datetime.now().date()
+
+        # Month/year we're currently viewing
+        self.view_month = self.current_date.month
+        self.view_year = self.current_date.year
+
+        self.create_widgets()
+
+    def create_widgets(self):
+        """Create the calendar UI."""
+        # Header with month/year and navigation
+        header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        header_frame.pack(fill="x", pady=(0, 10))
+
+        # Previous month button
+        prev_btn = ctk.CTkButton(
+            header_frame,
+            text="◀",
+            width=36,
+            height=36,
+            corner_radius=6,
+            command=self.prev_month,
+            fg_color=("gray85", "gray25"),
+            hover_color=("gray75", "gray30"),
+            font=ctk.CTkFont(size=14)
+        )
+        prev_btn.pack(side="left", padx=5)
+
+        # Month and year label
+        self.month_year_label = ctk.CTkLabel(
+            header_frame,
+            text="",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        self.month_year_label.pack(side="left", expand=True)
+
+        # Next month button
+        next_btn = ctk.CTkButton(
+            header_frame,
+            text="▶",
+            width=36,
+            height=36,
+            corner_radius=6,
+            command=self.next_month,
+            fg_color=("gray85", "gray25"),
+            hover_color=("gray75", "gray30"),
+            font=ctk.CTkFont(size=14)
+        )
+        next_btn.pack(side="left", padx=5)
+
+        # Day names header
+        days_header = ctk.CTkFrame(self, fg_color="transparent")
+        days_header.pack(fill="x", pady=(0, 5))
+
+        day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        for day_name in day_names:
+            day_label = ctk.CTkLabel(
+                days_header,
+                text=day_name,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=("gray30", "gray70"),
+                width=40
+            )
+            day_label.pack(side="left", padx=2)
+
+        # Calendar grid frame
+        self.calendar_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.calendar_frame.pack(fill="both", expand=True)
+
+        self.update_calendar()
+
+    def update_calendar(self):
+        """Update the calendar grid for the current view month/year."""
+        # Clear existing calendar
+        for widget in self.calendar_frame.winfo_children():
+            widget.destroy()
+
+        # Update month/year label
+        month_name = datetime(self.view_year, self.view_month, 1).strftime("%B %Y")
+        self.month_year_label.configure(text=month_name)
+
+        # Get first day of month and number of days
+        import calendar
+        first_day = datetime(self.view_year, self.view_month, 1)
+        first_weekday = first_day.weekday()
+        # Adjust: Python's weekday is Mon=0, we want Sun=0
+        first_weekday = (first_weekday + 1) % 7
+
+        num_days = calendar.monthrange(self.view_year, self.view_month)[1]
+
+        # Create date buttons in grid
+        row = 0
+        col = first_weekday
+
+        for day in range(1, num_days + 1):
+            date_obj = datetime(self.view_year, self.view_month, day).date()
+
+            # Determine button style
+            is_today = date_obj == self.today
+            is_selected = date_obj == self.selected_date
+
+            if is_selected:
+                fg_color = ("#0078D4", "#0078D4")  # Windows blue
+                text_color = "white"
+                hover_color = ("#005A9E", "#005A9E")
+            elif is_today:
+                fg_color = ("gray80", "gray30")
+                text_color = ("gray10", "white")
+                hover_color = ("gray70", "gray35")
+            else:
+                fg_color = "transparent"
+                text_color = ("gray10", "gray90")
+                hover_color = ("gray85", "gray25")
+
+            day_btn = ctk.CTkButton(
+                self.calendar_frame,
+                text=str(day),
+                width=40,
+                height=40,
+                corner_radius=6,
+                fg_color=fg_color,
+                text_color=text_color,
+                hover_color=hover_color,
+                font=ctk.CTkFont(size=12),
+                command=lambda d=date_obj: self.select_date(d)
+            )
+            day_btn.grid(row=row, column=col, padx=2, pady=2)
+
+            col += 1
+            if col > 6:
+                col = 0
+                row += 1
+
+    def prev_month(self):
+        """Go to previous month."""
+        if self.view_month == 1:
+            self.view_month = 12
+            self.view_year -= 1
+        else:
+            self.view_month -= 1
+        self.update_calendar()
+
+    def next_month(self):
+        """Go to next month."""
+        if self.view_month == 12:
+            self.view_month = 1
+            self.view_year += 1
+        else:
+            self.view_month += 1
+        self.update_calendar()
+
+    def select_date(self, date_obj):
+        """Select a date."""
+        self.selected_date = date_obj
+        self.update_calendar()
+
+    def get_selected_date(self):
+        """Return the currently selected date."""
+        return self.selected_date
 
 
 class LandscapingApp(ctk.CTk):
@@ -4151,40 +4320,25 @@ The upload page works on any device with a camera!""")
         self.load_weekly_schedule()
 
     def show_date_picker_dialog(self):
-        """Show a simple date picker dialog."""
+        """Show a modern Windows-style calendar picker dialog."""
         dialog = ctk.CTkToplevel(self)
         dialog.title("Select Date")
-        dialog.geometry("320x200")
+        dialog.geometry("340x400")
         dialog.transient(self)
         dialog.grab_set()
 
         # Center the dialog
         dialog.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() // 2) - (320 // 2)
-        y = self.winfo_y() + (self.winfo_height() // 2) - (200 // 2)
+        x = self.winfo_x() + (self.winfo_width() // 2) - (340 // 2)
+        y = self.winfo_y() + (self.winfo_height() // 2) - (400 // 2)
         dialog.geometry(f"+{x}+{y}")
 
-        label = ctk.CTkLabel(
-            dialog,
-            text="Select a date to view its week:",
-            font=ctk.CTkFont(size=13)
-        )
-        label.pack(pady=20)
-
-        # Date entry with tkcalendar (minimal styling)
-        date_picker = DateEntry(
-            dialog,
-            width=16,
-            background='darkblue',
-            foreground='white',
-            borderwidth=2,
-            date_pattern='mm/dd/yyyy'
-        )
-        date_picker.pack(pady=10)
-        date_picker.set_date(self.current_week_date)
+        # Calendar widget
+        calendar = ModernCalendar(dialog, self.current_week_date)
+        calendar.pack(padx=20, pady=20, fill="both", expand=True)
 
         def on_select():
-            self.current_week_date = date_picker.get_date()
+            self.current_week_date = calendar.get_selected_date()
             self.update_week_display()
             self.load_weekly_schedule()
             dialog.destroy()
@@ -4193,10 +4347,11 @@ The upload page works on any device with a camera!""")
             dialog,
             text="Go to Week",
             command=on_select,
-            height=32,
-            width=150
+            height=36,
+            width=150,
+            corner_radius=8
         )
-        select_btn.pack(pady=15)
+        select_btn.pack(pady=(0, 15))
 
     def update_week_display(self):
         """Update the week display button text."""
