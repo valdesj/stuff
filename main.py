@@ -43,8 +43,13 @@ except:
 class SplashScreen:
     """Transparent splash screen showing just the logo image."""
 
-    def __init__(self):
-        self.splash = tk.Tk()
+    def __init__(self, parent=None):
+        # Create as Toplevel if parent provided, otherwise as Tk
+        if parent:
+            self.splash = tk.Toplevel(parent)
+        else:
+            self.splash = tk.Tk()
+
         self.splash.overrideredirect(True)  # Remove window decorations
 
         # Set window background to white (will be made transparent)
@@ -6025,31 +6030,29 @@ Note: Requires Gemini API key (configure in Settings)
 
 
 if __name__ == "__main__":
-    # Show splash screen
-    splash = SplashScreen()
+    # Create main application first but keep it hidden
+    # This ensures it's the root window for Tkinter
+    app = LandscapingApp()
+    app.withdraw()  # Hide main window during initialization
+    app.protocol("WM_DELETE_WINDOW", app.on_closing)
 
-    # Function to initialize and show main app
-    def start_main_app():
-        # Create main application but keep it hidden initially
-        app = LandscapingApp()
-        app.withdraw()  # Hide main window while it initializes
-        app.protocol("WM_DELETE_WINDOW", app.on_closing)
+    # Create splash screen as a child of the main app
+    splash = SplashScreen(parent=app)
 
-        # Wait for main window to be fully initialized
+    # Function to finish initialization and show main app
+    def show_main_app():
+        # Let main app finish any remaining initialization
         app.update_idletasks()
 
-        # Function to transition from splash to main app
-        def show_main_app():
-            app.deiconify()  # Show the main application
-            app.update()
-            splash.close()  # Now close splash after main app is visible
+        # Show the main application
+        app.deiconify()
+        app.update()
 
-        # Show main app after a brief moment (let it fully initialize)
-        app.after(200, show_main_app)
+        # Close splash screen
+        splash.close()
 
-        # Start main application loop
-        app.mainloop()
+    # Give app time to fully initialize, then show it (300ms)
+    app.after(300, show_main_app)
 
-    # Start loading the main app after splash is displayed (100ms delay)
-    splash.splash.after(100, start_main_app)
-    splash.splash.mainloop()
+    # Start the main application loop
+    app.mainloop()
