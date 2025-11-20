@@ -49,7 +49,7 @@ except:
 
 
 class SplashScreen:
-    """Transparent splash screen showing just the logo image."""
+    """Grand splash screen with logo and styled frame."""
 
     def __init__(self, parent=None):
         # Create as Toplevel if parent provided, otherwise as Tk
@@ -60,21 +60,9 @@ class SplashScreen:
 
         self.splash.overrideredirect(True)  # Remove window decorations
 
-        # Set window background to white (will be made transparent)
-        self.splash.config(bg='white')
-
-        # Try to make white background transparent
-        try:
-            # Make white color transparent - this makes the white background invisible
-            self.splash.wm_attributes('-transparentcolor', 'white')
-            self.splash.attributes('-topmost', True)  # Keep on top
-        except:
-            # If transparentcolor not supported, try alpha
-            try:
-                self.splash.attributes('-alpha', 0.95)
-                self.splash.attributes('-topmost', True)
-            except:
-                pass
+        # Set modern dark background
+        self.splash.config(bg='#1a1a1a')
+        self.splash.attributes('-topmost', True)  # Keep on top
 
         # Load and display logo
         try:
@@ -92,27 +80,47 @@ class SplashScreen:
                 if img.mode != 'RGBA':
                     img = img.convert('RGBA')
 
-                # Resize if too large (max 400x400)
-                max_size = 400
+                # Make it larger - max 600x600 for a grander appearance
+                max_size = 600
                 if img.width > max_size or img.height > max_size:
                     img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
 
                 self.photo = ImageTk.PhotoImage(img)
 
-                # Create label with white background (will be transparent)
-                label = tk.Label(
+                # Create outer frame with border for grand appearance
+                outer_frame = tk.Frame(
                     self.splash,
+                    bg='#2a2a2a',
+                    highlightbackground='#4a4a4a',
+                    highlightthickness=3,
+                    bd=0
+                )
+                outer_frame.pack(padx=20, pady=20)
+
+                # Create label with dark background
+                label = tk.Label(
+                    outer_frame,
                     image=self.photo,
-                    bg='white',  # White background will be made transparent
+                    bg='#1a1a1a',
                     bd=0,
                     highlightthickness=0
                 )
-                label.pack()
+                label.pack(padx=30, pady=30)
+
+                # Add title below logo
+                title_label = tk.Label(
+                    outer_frame,
+                    text="Landscaping Client Tracker",
+                    font=("Arial", 16, "bold"),
+                    bg='#2a2a2a',
+                    fg='#ffffff'
+                )
+                title_label.pack(pady=(0, 20))
 
                 # Center window on screen
                 self.splash.update_idletasks()
-                width = img.width
-                height = img.height
+                width = img.width + 100
+                height = img.height + 140
                 x = (self.splash.winfo_screenwidth() // 2) - (width // 2)
                 y = (self.splash.winfo_screenheight() // 2) - (height // 2)
                 self.splash.geometry(f'{width}x{height}+{x}+{y}')
@@ -128,21 +136,31 @@ class SplashScreen:
 
     def show_simple_splash(self):
         """Show a simple text splash if image not available."""
-        label = tk.Label(
+        # Create outer frame with border for grand appearance
+        outer_frame = tk.Frame(
             self.splash,
+            bg='#2a2a2a',
+            highlightbackground='#4a4a4a',
+            highlightthickness=3,
+            bd=0
+        )
+        outer_frame.pack(padx=20, pady=20, fill="both", expand=True)
+
+        label = tk.Label(
+            outer_frame,
             text="Landscaping Client Tracker",
-            font=("Arial", 24, "bold"),
-            bg='#1a1a1a',
+            font=("Arial", 28, "bold"),
+            bg='#2a2a2a',
             fg='white',
-            padx=40,
-            pady=40
+            padx=60,
+            pady=60
         )
         label.pack()
 
         # Center window
         self.splash.update_idletasks()
-        width = 400
-        height = 200
+        width = 600
+        height = 300
         x = (self.splash.winfo_screenwidth() // 2) - (width // 2)
         y = (self.splash.winfo_screenheight() // 2) - (height // 2)
         self.splash.geometry(f'{width}x{height}+{x}+{y}')
@@ -6390,8 +6408,8 @@ if __name__ == "__main__":
         # Close splash screen
         splash.close()
 
-    # Give app time to fully initialize, then show it (300ms)
-    app.after(300, show_main_app)
+    # Display splash for 2.5 seconds before showing main app
+    app.after(2500, show_main_app)
 
     # Start the main application loop
     app.mainloop()
