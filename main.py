@@ -297,14 +297,15 @@ class LandscapingApp(ctk.CTk):
         for idx, (name, icon) in enumerate(nav_buttons, start=1):
             btn = ctk.CTkButton(
                 nav_frame,
-                text=f"{icon} {name}",
+                text=f"{icon}  {name}",  # Two spaces for consistent spacing
                 command=lambda n=name: self.show_frame(n),
-                font=ctk.CTkFont(size=13),
+                font=ctk.CTkFont(size=12),
                 height=40,
                 anchor="w",
                 fg_color="transparent",
                 text_color=("gray10", "gray90"),
-                hover_color=("gray70", "gray30")
+                hover_color=("gray70", "gray30"),
+                wraplength=0  # Prevent text wrapping
             )
             btn.grid(row=idx, column=0, sticky="ew", padx=8, pady=2)
             self.nav_buttons[name] = btn
@@ -316,14 +317,15 @@ class LandscapingApp(ctk.CTk):
         # Import Historical Data button at bottom
         import_btn = ctk.CTkButton(
             nav_frame,
-            text="📥 Import Data",
+            text="📥  Import Data",
             command=lambda: self.show_frame('Import Historical Data'),
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=12),
             height=40,
             anchor="w",
             fg_color="transparent",
             text_color=("gray10", "gray90"),
-            hover_color=("gray70", "gray30")
+            hover_color=("gray70", "gray30"),
+            wraplength=0
         )
         import_btn.grid(row=102, column=0, sticky="ew", padx=8, pady=2)
         self.nav_buttons['Import Historical Data'] = import_btn
@@ -331,14 +333,15 @@ class LandscapingApp(ctk.CTk):
         # Settings button at very bottom
         settings_btn = ctk.CTkButton(
             nav_frame,
-            text="⚙️ Settings",
+            text="⚙️  Settings",
             command=self.show_settings_dialog,
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=12),
             height=40,
             anchor="w",
             fg_color="transparent",
             text_color=("gray10", "gray90"),
-            hover_color=("gray70", "gray30")
+            hover_color=("gray70", "gray30"),
+            wraplength=0
         )
         settings_btn.grid(row=103, column=0, sticky="ew", padx=8, pady=(2, 10))
 
