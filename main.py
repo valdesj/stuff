@@ -873,63 +873,52 @@ class LandscapingApp(ctk.CTk):
         self.dashboard_client_frame.grid_columnconfigure(0, weight=1)
 
         # Visualization frame
-        self.viz_frame = ctk.CTkFrame(self.tab_dashboard)
-        self.viz_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
-        self.viz_frame.grid_columnconfigure(0, weight=1)
-        self.viz_frame.grid_rowconfigure(1, weight=1)
+        viz_frame = ctk.CTkFrame(self.tab_dashboard)
+        viz_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+        viz_frame.grid_columnconfigure(0, weight=1)
+        viz_frame.grid_rowconfigure(1, weight=1)
 
-        # Visualization header with toggle
-        viz_header_frame = ctk.CTkFrame(self.viz_frame, fg_color="transparent")
-        viz_header_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=3)
+        # Visualization header
+        viz_header = ctk.CTkFrame(viz_frame, fg_color="transparent")
+        viz_header.grid(row=0, column=0, sticky="ew", padx=5, pady=3)
 
         viz_title = ctk.CTkLabel(
-            viz_header_frame,
+            viz_header,
             text="Visit Trends (This Year)",
             font=ctk.CTkFont(size=13, weight="bold")
         )
         viz_title.pack(side="left", padx=5)
 
+        # Mode toggle
         self.viz_mode_var = tk.StringVar(value="time")
-        viz_toggle_frame = ctk.CTkFrame(viz_header_frame, fg_color="transparent")
-        viz_toggle_frame.pack(side="right", padx=5)
+        viz_toggle = ctk.CTkFrame(viz_header, fg_color="transparent")
+        viz_toggle.pack(side="right", padx=5)
 
-        time_radio = ctk.CTkRadioButton(
-            viz_toggle_frame,
+        ctk.CTkRadioButton(
+            viz_toggle,
             text="Time/Visit",
             variable=self.viz_mode_var,
             value="time",
             command=self.update_visualization,
             font=ctk.CTkFont(size=10)
-        )
-        time_radio.pack(side="left", padx=3)
+        ).pack(side="left", padx=3)
 
-        cost_radio = ctk.CTkRadioButton(
-            viz_toggle_frame,
+        ctk.CTkRadioButton(
+            viz_toggle,
             text="Cost/Visit",
             variable=self.viz_mode_var,
             value="cost",
             command=self.update_visualization,
             font=ctk.CTkFont(size=10)
-        )
-        cost_radio.pack(side="left", padx=3)
+        ).pack(side="left", padx=3)
 
-        # Canvas for matplotlib (will be recreated on each update)
-        self.create_viz_canvas_frame()
+        # Canvas container - fixed size, no propagation
+        self.viz_container = ctk.CTkFrame(viz_frame, width=800, height=300)
+        self.viz_container.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.viz_container.pack_propagate(False)
 
         self.current_viz_client_id = None
-
-    def create_viz_canvas_frame(self):
-        """Create or recreate the visualization canvas frame."""
-        # Destroy existing frame if it exists
-        if hasattr(self, 'viz_canvas_frame') and self.viz_canvas_frame:
-            self.viz_canvas_frame.destroy()
-
-        # Create fresh canvas frame with fixed height to prevent growth
-        self.viz_canvas_frame = ctk.CTkFrame(self.viz_frame, height=350)
-        self.viz_canvas_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-        self.viz_canvas_frame.grid_columnconfigure(0, weight=1)
-        self.viz_canvas_frame.grid_rowconfigure(0, weight=1)
-        self.viz_canvas_frame.grid_propagate(False)  # Prevent frame from resizing to fit contents
+        self.viz_canvas_widget = None
 
     def refresh_dashboard(self):
         """Refresh the dashboard with updated statistics."""
@@ -951,10 +940,6 @@ class LandscapingApp(ctk.CTk):
                 font=ctk.CTkFont(size=13)
             )
             no_data.pack(pady=20)
-
-            # Clear visualization
-            for widget in self.viz_canvas_frame.winfo_children():
-                widget.destroy()
             return
 
         # Build filter options
@@ -1130,16 +1115,14 @@ class LandscapingApp(ctk.CTk):
 
     def update_visualization(self, *args):
         """Update the visualization chart based on current client and mode."""
-        # Cleanup existing matplotlib resources
-        if hasattr(self, '_current_viz_figure') and self._current_viz_figure:
-            try:
-                plt.close(self._current_viz_figure)
-            except:
-                pass
-            self._current_viz_figure = None
+        # Destroy existing canvas widget if it exists
+        if self.viz_canvas_widget:
+            self.viz_canvas_widget.destroy()
+            self.viz_canvas_widget = None
 
-        # Recreate the canvas frame to ensure clean state
-        self.create_viz_canvas_frame()
+        # Clear container
+        for widget in self.viz_container.winfo_children():
+            widget.destroy()
 
         if not self.current_viz_client_id:
             return
@@ -1147,119 +1130,93 @@ class LandscapingApp(ctk.CTk):
         # Get visit data for current year
         current_year = datetime.now().year
         visits = self.db.get_client_visits(self.current_viz_client_id)
-
-        # Filter to current year
         visits_this_year = [
             v for v in visits
             if datetime.strptime(v['visit_date'], '%Y-%m-%d').year == current_year
         ]
 
         if not visits_this_year:
-            no_data = ctk.CTkLabel(
-                self.viz_canvas_frame,
+            ctk.CTkLabel(
+                self.viz_container,
                 text="No visits recorded this year",
                 font=ctk.CTkFont(size=11)
-            )
-            no_data.pack(pady=20)
+            ).pack(pady=20)
             return
 
-        # Get hourly rate for cost calculation
+        # Get hourly rate
         hourly_rate = self.db.get_hourly_rate()
 
-        # Group visits by month and calculate averages
+        # Calculate monthly data
         monthly_data = defaultdict(list)
-
         for visit in visits_this_year:
             visit_date = datetime.strptime(visit['visit_date'], '%Y-%m-%d')
-            month_key = visit_date.replace(day=1)  # First day of month as key
+            month_key = visit_date.replace(day=1)
 
             if self.viz_mode_var.get() == "time":
                 monthly_data[month_key].append(visit['duration_minutes'])
-            else:  # cost mode
+            else:  # cost
                 labor_cost = (visit['duration_minutes'] / 60) * 2 * hourly_rate
-                visit_materials = self.db.get_visit_materials(visit['id'])
-                material_cost = sum(vm['quantity'] * vm['cost_at_time'] for vm in visit_materials)
-                total_cost = labor_cost + material_cost
-                monthly_data[month_key].append(total_cost)
+                materials = self.db.get_visit_materials(visit['id'])
+                material_cost = sum(m['quantity'] * m['cost_at_time'] for m in materials)
+                monthly_data[month_key].append(labor_cost + material_cost)
 
-        # Calculate monthly averages
         months = sorted(monthly_data.keys())
-        averages = [np.mean(monthly_data[month]) for month in months]
+        averages = [np.mean(monthly_data[m]) for m in months]
 
-        if len(months) == 0:
-            no_data = ctk.CTkLabel(
-                self.viz_canvas_frame,
+        if not months:
+            ctk.CTkLabel(
+                self.viz_container,
                 text="No data available",
                 font=ctk.CTkFont(size=11)
-            )
-            no_data.pack(pady=20)
+            ).pack(pady=20)
             return
 
         # Set labels
-        if self.viz_mode_var.get() == "time":
-            ylabel = "Avg Time (minutes)"
-            title = "Average Time per Visit by Month"
-        else:
-            ylabel = "Avg Cost ($)"
-            title = "Average Cost per Visit by Month"
+        ylabel = "Avg Time (minutes)" if self.viz_mode_var.get() == "time" else "Avg Cost ($)"
+        title = f"Average {ylabel.split()[1]} per Visit by Month"
 
-        # Create matplotlib figure
+        # Create figure with fixed size
         fig = Figure(figsize=(8, 3), dpi=100, facecolor='#2b2b2b')
-        self._current_viz_figure = fig  # Store reference for cleanup
         ax = fig.add_subplot(111)
         ax.set_facecolor('#2b2b2b')
 
-        # Plot with smooth curve if we have enough data points
+        # Plot data
         if len(months) >= 3:
-            # Convert dates to numbers for interpolation
             months_num = mdates.date2num(months)
-
-            # Create smooth curve using spline interpolation
             months_smooth = np.linspace(months_num.min(), months_num.max(), 300)
             try:
                 spl = make_interp_spline(months_num, averages, k=min(3, len(months)-1))
                 averages_smooth = spl(months_smooth)
-
-                # Plot smooth curve
                 ax.plot(mdates.num2date(months_smooth), averages_smooth,
                        linestyle='-', linewidth=2.5, color='#1f77b4', alpha=0.8)
-                # Plot actual data points
                 ax.plot(months, averages, marker='o', linestyle='',
                        markersize=6, color='#ff7f0e', alpha=0.9, zorder=5)
             except:
-                # Fallback to regular plot if spline fails
                 ax.plot(months, averages, marker='o', linestyle='-',
                        linewidth=2, markersize=6, color='#1f77b4')
         else:
-            # Not enough points for smooth curve, use regular plot
             ax.plot(months, averages, marker='o', linestyle='-',
                    linewidth=2, markersize=6, color='#1f77b4')
 
+        # Style
         ax.set_xlabel("Month", fontsize=12, color='white', fontweight='bold')
         ax.set_ylabel(ylabel, fontsize=12, color='white', fontweight='bold')
         ax.set_title(title, fontsize=14, color='white', pad=8, fontweight='bold')
         ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
         ax.tick_params(colors='white', labelsize=11)
-
-        # Format x-axis to show month names
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%b'))
         ax.xaxis.set_major_locator(mdates.MonthLocator())
 
-        # Adjust layout
-        fig.tight_layout(pad=1.5)
-
-        # Embed in tkinter
-        canvas = FigureCanvasTkAgg(fig, master=self.viz_canvas_frame)
-        canvas.draw()
-        canvas_widget = canvas.get_tk_widget()
-        canvas_widget.grid(row=0, column=0, sticky="nsew")
-
-        # Store references for cleanup
-        self._current_viz_canvas = canvas
-
-        # Update spine colors for dark theme
         for spine in ax.spines.values():
             spine.set_edgecolor('#555555')
+
+        fig.tight_layout(pad=1.5)
+
+        # Embed in container - use pack for simplicity
+        canvas = FigureCanvasTkAgg(fig, master=self.viz_container)
+        canvas.draw()
+        self.viz_canvas_widget = canvas.get_tk_widget()
+        self.viz_canvas_widget.pack(fill="both", expand=True)
 
     def create_client_card(self, parent, stats, row):
         """Create a visual card showing client statistics."""
