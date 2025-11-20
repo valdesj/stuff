@@ -304,8 +304,7 @@ class LandscapingApp(ctk.CTk):
                 anchor="w",
                 fg_color="transparent",
                 text_color=("gray10", "gray90"),
-                hover_color=("gray70", "gray30"),
-                wraplength=0  # Prevent text wrapping
+                hover_color=("gray70", "gray30")
             )
             btn.grid(row=idx, column=0, sticky="ew", padx=8, pady=2)
             self.nav_buttons[name] = btn
@@ -324,8 +323,7 @@ class LandscapingApp(ctk.CTk):
             anchor="w",
             fg_color="transparent",
             text_color=("gray10", "gray90"),
-            hover_color=("gray70", "gray30"),
-            wraplength=0
+            hover_color=("gray70", "gray30")
         )
         import_btn.grid(row=102, column=0, sticky="ew", padx=8, pady=2)
         self.nav_buttons['Import Historical Data'] = import_btn
@@ -340,8 +338,7 @@ class LandscapingApp(ctk.CTk):
             anchor="w",
             fg_color="transparent",
             text_color=("gray10", "gray90"),
-            hover_color=("gray70", "gray30"),
-            wraplength=0
+            hover_color=("gray70", "gray30")
         )
         settings_btn.grid(row=103, column=0, sticky="ew", padx=8, pady=(2, 10))
 
