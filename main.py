@@ -28,12 +28,20 @@ from scipy.interpolate import make_interp_spline
 ctk.set_appearance_mode("dark")  # Dark mode
 # No color theme - using grayscale throughout
 
-# Performance settings to reduce blur during scrolling
+# Performance settings for better text rendering
 # Set these before creating any widgets
 try:
-    # Disable DPI scaling to prevent blur
+    # Use per-monitor DPI awareness for better text rendering
     import ctypes
-    ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    # Try per-monitor v2 first (best for text clarity)
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except:
+        # Fall back to system DPI awareness
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except:
+            pass
 except:
     # Not on Windows or doesn't support, ignore
     pass
@@ -350,15 +358,26 @@ class ModernCalendar(ctk.CTkFrame):
         return self.selected_date
 
     def on_mouse_wheel(self, event):
-        """Handle mouse wheel scrolling to change months."""
+        """Handle mouse wheel scrolling to change months (slow scroll)."""
+        # Accumulate scroll delta for slower month changes
+        if not hasattr(self, '_scroll_accumulator'):
+            self._scroll_accumulator = 0
+
+        # Threshold for changing month (higher = slower scrolling)
+        threshold = 240  # Requires multiple scroll notches to change month
+
         # Windows/Mac: event.delta
         # Linux: event.num (4 = scroll up, 5 = scroll down)
         if hasattr(event, 'delta'):
-            if event.delta > 0:
+            self._scroll_accumulator += event.delta
+            if self._scroll_accumulator >= threshold:
                 self.prev_month()
-            else:
+                self._scroll_accumulator = 0
+            elif self._scroll_accumulator <= -threshold:
                 self.next_month()
+                self._scroll_accumulator = 0
         else:
+            # Linux: single scroll = change month (no accumulation needed)
             if event.num == 4:
                 self.prev_month()
             elif event.num == 5:
@@ -370,11 +389,6 @@ class LandscapingApp(ctk.CTk):
 
     def __init__(self):
         super().__init__()
-
-        # Performance optimizations for smoother scrolling
-        # Disable scaling to prevent blur during scroll
-        ctk.set_widget_scaling(1.0)
-        ctk.set_window_scaling(1.0)
 
         # Initialize database
         self.db = Database()
@@ -395,11 +409,10 @@ class LandscapingApp(ctk.CTk):
         # Set application icon
         self.set_app_icon()
 
-        # Additional performance optimizations for smoother scrolling
+        # Text rendering optimizations
         try:
-            # Tkinter rendering optimizations
-            self.tk.call('tk', 'scaling', 1.0)
-            # Disable smooth scrolling effects that cause blur
+            # Use system font smoothing for better text clarity
+            self.option_add('*Font', 'TkDefaultFont')
             self.option_add('*tearOff', False)
         except:
             pass
