@@ -204,26 +204,42 @@ class LandscapingApp(ctk.CTk):
         # Create main container
         self.main_container = ctk.CTkFrame(self)
         self.main_container.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-        self.main_container.grid_columnconfigure(0, weight=1)
-        self.main_container.grid_rowconfigure(1, weight=1)
+        self.main_container.grid_columnconfigure(1, weight=1)
+        self.main_container.grid_rowconfigure(0, weight=1)
 
-        # Create header
+        # Create left navigation pane
+        self.create_navigation_pane()
+
+        # Create right content area
+        self.content_area = ctk.CTkFrame(self.main_container)
+        self.content_area.grid(row=0, column=1, sticky="nsew", padx=(5, 0), pady=0)
+        self.content_area.grid_columnconfigure(0, weight=1)
+        self.content_area.grid_rowconfigure(0, weight=1)
+
+        # Create header in content area
         self.create_header()
 
-        # Create tabview for different sections
-        self.tabview = ctk.CTkTabview(self.main_container, height=750)
-        self.tabview.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        # Create frames for each section (replacing tabs)
+        self.frames = {}
+        self.tab_dashboard = ctk.CTkFrame(self.content_area)
+        self.tab_clients = ctk.CTkFrame(self.content_area)
+        self.tab_visits = ctk.CTkFrame(self.content_area)
+        self.tab_daily = ctk.CTkFrame(self.content_area)
+        self.tab_todo = ctk.CTkFrame(self.content_area)
+        self.tab_materials = ctk.CTkFrame(self.content_area)
+        self.tab_import = ctk.CTkFrame(self.content_area)
 
-        # Add tabs
-        self.tab_dashboard = self.tabview.add("Dashboard")
-        self.tab_clients = self.tabview.add("Clients")
-        self.tab_visits = self.tabview.add("Visits")
-        self.tab_daily = self.tabview.add("Daily Schedule")
-        self.tab_todo = self.tabview.add("To-Do")
-        self.tab_materials = self.tabview.add("Materials")
-        self.tab_import = self.tabview.add("Import Historical Data")
+        self.frames = {
+            'Dashboard': self.tab_dashboard,
+            'Clients': self.tab_clients,
+            'Visits': self.tab_visits,
+            'Daily Schedule': self.tab_daily,
+            'To-Do': self.tab_todo,
+            'Materials': self.tab_materials,
+            'Import Historical Data': self.tab_import
+        }
 
-        # Initialize tabs
+        # Initialize all frames
         self.init_dashboard_tab()
         self.init_clients_tab()
         self.init_visits_tab()
@@ -243,12 +259,108 @@ class LandscapingApp(ctk.CTk):
             'materials': False
         }
 
-        # Set up tab change callback for lazy loading
-        self.tabview.configure(command=self.on_tab_change)
+        # Track current visible frame
+        self.current_frame = None
 
-        # Load only the dashboard initially (shown by default)
+        # Show dashboard by default
+        self.show_frame('Dashboard')
         self.refresh_dashboard()
         self.tabs_loaded['dashboard'] = True
+
+    def create_navigation_pane(self):
+        """Create left navigation pane with buttons for each section."""
+        nav_frame = ctk.CTkFrame(self.main_container, width=200)
+        nav_frame.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
+        nav_frame.grid_propagate(False)  # Don't shrink
+        nav_frame.grid_rowconfigure(100, weight=1)  # Push bottom items down
+
+        # Title at top
+        title = ctk.CTkLabel(
+            nav_frame,
+            text="🌿 Landscaping\nClient Tracker",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            justify="center"
+        )
+        title.grid(row=0, column=0, sticky="ew", padx=10, pady=15)
+
+        # Main navigation buttons
+        nav_buttons = [
+            ("Dashboard", "📊"),
+            ("Clients", "👥"),
+            ("Visits", "📅"),
+            ("Daily Schedule", "🗓️"),
+            ("To-Do", "✓"),
+            ("Materials", "🛠️"),
+        ]
+
+        self.nav_buttons = {}
+        for idx, (name, icon) in enumerate(nav_buttons, start=1):
+            btn = ctk.CTkButton(
+                nav_frame,
+                text=f"{icon} {name}",
+                command=lambda n=name: self.show_frame(n),
+                font=ctk.CTkFont(size=13),
+                height=40,
+                anchor="w",
+                fg_color="transparent",
+                text_color=("gray10", "gray90"),
+                hover_color=("gray70", "gray30")
+            )
+            btn.grid(row=idx, column=0, sticky="ew", padx=8, pady=2)
+            self.nav_buttons[name] = btn
+
+        # Separator before bottom items
+        separator = ctk.CTkFrame(nav_frame, height=2, fg_color=("gray70", "gray30"))
+        separator.grid(row=101, column=0, sticky="ew", padx=10, pady=10)
+
+        # Import Historical Data button at bottom
+        import_btn = ctk.CTkButton(
+            nav_frame,
+            text="📥 Import Data",
+            command=lambda: self.show_frame('Import Historical Data'),
+            font=ctk.CTkFont(size=13),
+            height=40,
+            anchor="w",
+            fg_color="transparent",
+            text_color=("gray10", "gray90"),
+            hover_color=("gray70", "gray30")
+        )
+        import_btn.grid(row=102, column=0, sticky="ew", padx=8, pady=2)
+        self.nav_buttons['Import Historical Data'] = import_btn
+
+        # Settings button at very bottom
+        settings_btn = ctk.CTkButton(
+            nav_frame,
+            text="⚙️ Settings",
+            command=self.show_settings_dialog,
+            font=ctk.CTkFont(size=13),
+            height=40,
+            anchor="w",
+            fg_color="transparent",
+            text_color=("gray10", "gray90"),
+            hover_color=("gray70", "gray30")
+        )
+        settings_btn.grid(row=103, column=0, sticky="ew", padx=8, pady=(2, 10))
+
+    def show_frame(self, frame_name):
+        """Show the specified frame and highlight the corresponding nav button."""
+        # Hide current frame
+        if self.current_frame:
+            self.frames[self.current_frame].grid_forget()
+
+        # Show new frame
+        self.frames[frame_name].grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.current_frame = frame_name
+
+        # Update button colors to highlight active
+        for name, btn in self.nav_buttons.items():
+            if name == frame_name:
+                btn.configure(fg_color=("gray75", "gray25"))
+            else:
+                btn.configure(fg_color="transparent")
+
+        # Handle lazy loading
+        self.on_tab_change(frame_name)
 
     def set_app_icon(self):
         """Set the application icon from PNG file, converting to ICO if needed."""
@@ -412,7 +524,7 @@ class LandscapingApp(ctk.CTk):
                 result = result_container['result']
                 if result['success'] and result['records']:
                     # Switch to Visits tab
-                    self.tabview.set("Visits")
+                    self.show_frame("Visits")
                     # Show results dialog
                     self.show_scanned_visits_dialog(result['records'], parser)
                 else:
@@ -440,15 +552,13 @@ class LandscapingApp(ctk.CTk):
                 all_records.extend(result['records'])
 
         if all_records:
-            self.tabview.set("Visits")
+            self.show_frame("Visits")
             self.show_scanned_visits_dialog(all_records, parser)
         else:
             messagebox.showwarning("No Records Found", "Could not find any visit records in the uploaded images.")
 
-    def on_tab_change(self):
+    def on_tab_change(self, current_tab):
         """Handle tab change for lazy loading optimization."""
-        current_tab = self.tabview.get()
-
         # Lazy load clients tab
         if current_tab == "Clients" and not self.tabs_loaded['clients']:
             self.refresh_clients_list()
@@ -460,37 +570,22 @@ class LandscapingApp(ctk.CTk):
             self.tabs_loaded['materials'] = True
 
     def create_header(self):
-        """Create the application header with title and refresh button."""
-        header_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        """Create the application header with refresh button."""
+        header_frame = ctk.CTkFrame(self.content_area, fg_color="transparent")
         header_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=3)
         header_frame.grid_columnconfigure(0, weight=1)
 
-        title = ctk.CTkLabel(
-            header_frame,
-            text="🌿 Landscaping Client Tracker",
-            font=ctk.CTkFont(size=16, weight="bold")
-        )
-        title.grid(row=0, column=0, sticky="w", padx=5, pady=3)
-
-        settings_btn = ctk.CTkButton(
-            header_frame,
-            text="⚙ Settings",
-            command=self.show_settings_dialog,
-            font=ctk.CTkFont(size=10),
-            height=26,
-            width=100
-        )
-        settings_btn.grid(row=0, column=1, padx=3, pady=3)
+        # Empty space on left (title is now in nav pane)
 
         refresh_btn = ctk.CTkButton(
             header_frame,
-            text="Refresh All",
+            text="🔄 Refresh All",
             command=self.refresh_all,
-            font=ctk.CTkFont(size=10),
-            height=26,
-            width=100
+            font=ctk.CTkFont(size=11),
+            height=30,
+            width=120
         )
-        refresh_btn.grid(row=0, column=2, padx=3, pady=3)
+        refresh_btn.grid(row=0, column=1, padx=5, pady=3)
 
     # ==================== DASHBOARD TAB ====================
 
@@ -4471,7 +4566,7 @@ The upload page works on any device with a camera!""")
     def edit_anomalous_visit(self, visit):
         """Open the Visits tab to edit this visit."""
         # Switch to Visits tab
-        self.tabview.set("Visits")
+        self.show_frame("Visits")
         # The visit editing would happen in the Visits tab
 
     def ignore_anomaly(self, visit_id):
@@ -4740,7 +4835,7 @@ The upload page works on any device with a camera!""")
     def go_to_client_contact(self, client_id):
         """Navigate to client contact information."""
         # Switch to Clients tab
-        self.tabview.set("Clients")
+        self.show_frame("Clients")
         # Refresh client list and show this specific client's info
         self.refresh_clients_list()
         self.show_client_details(client_id)
@@ -4748,7 +4843,7 @@ The upload page works on any device with a camera!""")
     def go_to_client_materials(self, client_id, client_name):
         """Navigate to client materials configuration."""
         # Switch to Clients tab
-        self.tabview.set("Clients")
+        self.show_frame("Clients")
         # Refresh client list and show this specific client's info
         self.refresh_clients_list()
         self.show_client_details(client_id)
