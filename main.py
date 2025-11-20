@@ -1115,6 +1115,11 @@ class LandscapingApp(ctk.CTk):
 
     def update_visualization(self, *args):
         """Update the visualization chart based on current client and mode."""
+        # Close previous matplotlib figure to prevent memory accumulation
+        if hasattr(self, '_viz_figure') and self._viz_figure:
+            plt.close(self._viz_figure)
+            self._viz_figure = None
+
         # Destroy existing canvas widget if it exists
         if self.viz_canvas_widget:
             self.viz_canvas_widget.destroy()
@@ -1177,6 +1182,7 @@ class LandscapingApp(ctk.CTk):
 
         # Create figure with fixed size
         fig = Figure(figsize=(8, 3), dpi=100, facecolor='#2b2b2b')
+        self._viz_figure = fig  # Store for cleanup on next update
         ax = fig.add_subplot(111)
         ax.set_facecolor('#2b2b2b')
 
