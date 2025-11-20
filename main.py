@@ -6030,19 +6030,22 @@ if __name__ == "__main__":
 
     # Function to initialize and show main app
     def start_main_app():
-        # Create main application (this takes time to initialize)
+        # Create main application but keep it hidden initially
         app = LandscapingApp()
+        app.withdraw()  # Hide main window while it initializes
         app.protocol("WM_DELETE_WINDOW", app.on_closing)
 
-        # Wait for main window to be fully mapped/visible
+        # Wait for main window to be fully initialized
         app.update_idletasks()
 
-        # Give the window a moment to render
-        def close_splash_and_show_app():
-            splash.close()
-            app.deiconify()  # Ensure app is visible
+        # Function to transition from splash to main app
+        def show_main_app():
+            app.deiconify()  # Show the main application
+            app.update()
+            splash.close()  # Now close splash after main app is visible
 
-        app.after(100, close_splash_and_show_app)
+        # Show main app after a brief moment (let it fully initialize)
+        app.after(200, show_main_app)
 
         # Start main application loop
         app.mainloop()
