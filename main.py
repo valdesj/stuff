@@ -26,7 +26,7 @@ from scipy.interpolate import make_interp_spline
 
 # Configure CustomTkinter
 ctk.set_appearance_mode("dark")  # Dark mode
-ctk.set_default_color_theme("blue")
+# No color theme - using grayscale throughout
 
 # Performance settings to reduce blur during scrolling
 # Set these before creating any widgets
@@ -225,6 +225,11 @@ class ModernCalendar(ctk.CTkFrame):
         self.calendar_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.calendar_frame.pack(fill="both", expand=True)
 
+        # Bind mouse wheel for scrolling through months
+        self.bind_all("<MouseWheel>", self.on_mouse_wheel)  # Windows/Mac
+        self.bind_all("<Button-4>", self.on_mouse_wheel)    # Linux scroll up
+        self.bind_all("<Button-5>", self.on_mouse_wheel)    # Linux scroll down
+
         self.update_calendar()
 
     def update_calendar(self):
@@ -316,6 +321,21 @@ class ModernCalendar(ctk.CTkFrame):
         """Return the currently selected date."""
         return self.selected_date
 
+    def on_mouse_wheel(self, event):
+        """Handle mouse wheel scrolling to change months."""
+        # Windows/Mac: event.delta
+        # Linux: event.num (4 = scroll up, 5 = scroll down)
+        if hasattr(event, 'delta'):
+            if event.delta > 0:
+                self.prev_month()
+            else:
+                self.next_month()
+        else:
+            if event.num == 4:
+                self.prev_month()
+            elif event.num == 5:
+                self.next_month()
+
 
 class LandscapingApp(ctk.CTk):
     """Main application window for the Landscaping Client Tracker."""
@@ -330,13 +350,6 @@ class LandscapingApp(ctk.CTk):
 
         # Initialize database
         self.db = Database()
-
-        # Load and apply saved color theme
-        saved_theme = self.db.get_setting('color_theme', 'blue')
-        try:
-            ctk.set_default_color_theme(saved_theme)
-        except:
-            ctk.set_default_color_theme("blue")
 
         # Initialize importers (lazy load image parser only when needed)
         self.excel_importer = ExcelImporter(self.db)
@@ -438,7 +451,7 @@ class LandscapingApp(ctk.CTk):
 
     def create_navigation_pane(self):
         """Create left navigation pane with button-style navigation."""
-        nav_frame = ctk.CTkFrame(self.main_container, width=200)
+        nav_frame = ctk.CTkFrame(self.main_container, width=220)
         nav_frame.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
         nav_frame.grid_propagate(False)  # Don't shrink
         nav_frame.grid_rowconfigure(100, weight=1)  # Push bottom items down
@@ -4347,11 +4360,14 @@ The upload page works on any device with a camera!""")
             dialog,
             text="Go to Week",
             command=on_select,
-            height=36,
-            width=150,
-            corner_radius=8
+            height=40,
+            width=200,
+            corner_radius=8,
+            fg_color=("gray75", "gray30"),
+            hover_color=("gray65", "gray35"),
+            font=ctk.CTkFont(size=14, weight="bold")
         )
-        select_btn.pack(pady=(0, 15))
+        select_btn.pack(pady=(10, 20))
 
     def update_week_display(self):
         """Update the week display button text."""
@@ -4450,8 +4466,8 @@ The upload page works on any device with a camera!""")
             day = monday + timedelta(days=day_offset)
             visits = week_visits[day]
 
-            # Day column - scrollable for many visits
-            day_col = ctk.CTkScrollableFrame(
+            # Day column
+            day_col = ctk.CTkFrame(
                 days_frame,
                 corner_radius=8,
                 border_width=1,
@@ -6238,38 +6254,6 @@ Note: Requires Gemini API key (configure in Settings)
         )
         year_help.pack(pady=(0, 8), padx=10)
 
-        # Color Theme Setting
-        theme_frame = ctk.CTkFrame(scroll_frame)
-        theme_frame.pack(pady=8, padx=10, fill="x")
-
-        theme_label = ctk.CTkLabel(
-            theme_frame,
-            text="Color Theme:",
-            font=ctk.CTkFont(size=12, weight="bold")
-        )
-        theme_label.pack(pady=(8, 3), padx=10, anchor="w")
-
-        current_theme = self.db.get_setting('color_theme', 'blue')
-        theme_var = tk.StringVar(value=current_theme)
-
-        theme_options = ["blue", "dark-blue", "green"]
-        theme_menu = ctk.CTkOptionMenu(
-            theme_frame,
-            variable=theme_var,
-            values=theme_options,
-            height=30,
-            font=ctk.CTkFont(size=11)
-        )
-        theme_menu.pack(pady=3, padx=10, fill="x")
-
-        theme_help = ctk.CTkLabel(
-            theme_frame,
-            text="Changes will apply after restarting the application",
-            font=ctk.CTkFont(size=9),
-            text_color="gray"
-        )
-        theme_help.pack(pady=(0, 8), padx=10)
-
         def save_settings():
             try:
                 # Validate and save hourly rate
@@ -6294,16 +6278,7 @@ Note: Requires Gemini API key (configure in Settings)
                 old_year = self.db.get_setting('working_year', str(datetime.now().year))
                 self.db.set_setting('working_year', new_year)
 
-                # Save color theme
-                new_theme = theme_var.get()
-                self.db.set_setting('color_theme', new_theme)
-
-                # Apply theme immediately
-                if new_theme != current_theme:
-                    ctk.set_default_color_theme(new_theme)
-                    messagebox.showinfo("Success", "Settings saved! Color theme will fully apply after restart.")
-                else:
-                    messagebox.showinfo("Success", "Settings saved successfully!")
+                messagebox.showinfo("Success", "Settings saved successfully!")
 
                 self.refresh_dashboard()  # Refresh dashboard to show updated calculations
                 dialog.destroy()
