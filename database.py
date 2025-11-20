@@ -679,6 +679,84 @@ class Database:
         """Set the hourly labor rate."""
         self.set_setting('hourly_rate', str(rate))
 
+    # ==================== ROUTE OPTIMIZATION SETTINGS ====================
+
+    def get_start_location(self) -> str:
+        """Get the crew starting location (depot address)."""
+        return self.get_setting('start_location', '')
+
+    def set_start_location(self, address: str):
+        """Set the crew starting location."""
+        self.set_setting('start_location', address)
+
+    def get_end_location(self) -> str:
+        """Get the crew ending location (depot address)."""
+        return self.get_setting('end_location', '')
+
+    def set_end_location(self, address: str):
+        """Set the crew ending location."""
+        self.set_setting('end_location', address)
+
+    def get_crew_start_time(self) -> str:
+        """Get the crew start time (HH:MM format)."""
+        return self.get_setting('crew_start_time', '08:00')
+
+    def set_crew_start_time(self, time_str: str):
+        """Set the crew start time (HH:MM format)."""
+        self.set_setting('crew_start_time', time_str)
+
+    def get_google_maps_api_key(self) -> str:
+        """Get the Google Maps API key."""
+        return self.get_setting('google_maps_api_key', '')
+
+    def set_google_maps_api_key(self, api_key: str):
+        """Set the Google Maps API key."""
+        self.set_setting('google_maps_api_key', api_key)
+
+    # ==================== ROUTE OPTIMIZATION DATA ====================
+
+    def get_client_average_duration(self, client_id: int) -> float:
+        """Get the average visit duration for a client in minutes."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT AVG(duration_minutes) as avg_duration
+            FROM visits
+            WHERE client_id = ?
+        """, (client_id,))
+        row = cursor.fetchone()
+        return row['avg_duration'] if row and row['avg_duration'] else 60.0  # Default 60 min
+
+    def get_clients_with_addresses(self) -> List[Dict]:
+        """Get all active clients that have addresses for route planning."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT id, name, address
+            FROM clients
+            WHERE is_active = 1 AND address IS NOT NULL AND address != ''
+            ORDER BY name
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_visits_for_date(self, visit_date: str) -> List[Dict]:
+        """Get all visits scheduled for a specific date with client info."""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT
+                v.id,
+                v.client_id,
+                v.visit_date,
+                v.start_time,
+                v.end_time,
+                v.duration_minutes,
+                c.name as client_name,
+                c.address
+            FROM visits v
+            JOIN clients c ON v.client_id = c.id
+            WHERE v.visit_date = ? AND c.address IS NOT NULL AND c.address != ''
+            ORDER BY v.start_time
+        """, (visit_date,))
+        return [dict(row) for row in cursor.fetchall()]
+
     # ==================== ANALYTICS & CALCULATIONS ====================
 
     def get_client_statistics(self, client_id: int) -> Dict:

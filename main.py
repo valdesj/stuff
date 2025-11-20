@@ -6327,6 +6327,109 @@ Note: Requires Gemini API key (configure in Settings)
         )
         year_help.pack(pady=(0, 8), padx=10)
 
+        # ========== ROUTE OPTIMIZATION SETTINGS ==========
+        route_header = ctk.CTkLabel(
+            scroll_frame,
+            text="Route Optimization Settings",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        route_header.pack(pady=(15, 5), padx=10, anchor="w")
+
+        # Start Location
+        start_frame = ctk.CTkFrame(scroll_frame)
+        start_frame.pack(pady=8, padx=10, fill="x")
+
+        start_label = ctk.CTkLabel(
+            start_frame,
+            text="Crew Start Location (Depot Address):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        start_label.pack(pady=(8, 3), padx=10, anchor="w")
+
+        start_entry = ctk.CTkEntry(
+            start_frame,
+            placeholder_text="e.g., 123 Main St, City, State ZIP",
+            height=30
+        )
+        start_entry.pack(pady=3, padx=10, fill="x")
+        start_entry.insert(0, self.db.get_start_location())
+
+        # End Location
+        end_frame = ctk.CTkFrame(scroll_frame)
+        end_frame.pack(pady=8, padx=10, fill="x")
+
+        end_label = ctk.CTkLabel(
+            end_frame,
+            text="Crew End Location (Usually same as start):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        end_label.pack(pady=(8, 3), padx=10, anchor="w")
+
+        end_entry = ctk.CTkEntry(
+            end_frame,
+            placeholder_text="e.g., 123 Main St, City, State ZIP",
+            height=30
+        )
+        end_entry.pack(pady=3, padx=10, fill="x")
+        end_entry.insert(0, self.db.get_end_location())
+
+        # Crew Start Time
+        time_frame = ctk.CTkFrame(scroll_frame)
+        time_frame.pack(pady=8, padx=10, fill="x")
+
+        time_label = ctk.CTkLabel(
+            time_frame,
+            text="Crew Start Time:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        time_label.pack(pady=(8, 3), padx=10, anchor="w")
+
+        time_entry = ctk.CTkEntry(
+            time_frame,
+            placeholder_text="HH:MM (e.g., 08:00)",
+            height=30
+        )
+        time_entry.pack(pady=3, padx=10, fill="x")
+        time_entry.insert(0, self.db.get_crew_start_time())
+
+        time_help = ctk.CTkLabel(
+            time_frame,
+            text="24-hour format (e.g., 08:00 for 8 AM, 13:30 for 1:30 PM)",
+            font=ctk.CTkFont(size=9),
+            text_color="gray"
+        )
+        time_help.pack(pady=(0, 8), padx=10)
+
+        # Google Maps API Key
+        gmaps_frame = ctk.CTkFrame(scroll_frame)
+        gmaps_frame.pack(pady=8, padx=10, fill="x")
+
+        gmaps_label = ctk.CTkLabel(
+            gmaps_frame,
+            text="Google Maps API Key (for route optimization):",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        gmaps_label.pack(pady=(8, 3), padx=10, anchor="w")
+
+        gmaps_entry = ctk.CTkEntry(
+            gmaps_frame,
+            placeholder_text="Get API key from https://console.cloud.google.com/",
+            height=30,
+            show="*"
+        )
+        gmaps_entry.pack(pady=3, padx=10, fill="x")
+        gmaps_entry.insert(0, self.db.get_google_maps_api_key())
+
+        gmaps_help = ctk.CTkLabel(
+            gmaps_frame,
+            text="Required for calculating driving times between locations. Enable 'Distance Matrix API' in Google Cloud Console.",
+            font=ctk.CTkFont(size=9),
+            text_color="gray",
+            wraplength=700,
+            justify="left"
+        )
+        gmaps_help.pack(pady=(0, 8), padx=10, anchor="w")
+
         def save_settings():
             try:
                 # Validate and save hourly rate
@@ -6350,6 +6453,22 @@ Note: Requires Gemini API key (configure in Settings)
                 new_year = year_var.get()
                 old_year = self.db.get_setting('working_year', str(datetime.now().year))
                 self.db.set_setting('working_year', new_year)
+
+                # Save route optimization settings
+                self.db.set_start_location(start_entry.get().strip())
+                self.db.set_end_location(end_entry.get().strip())
+
+                # Validate and save crew start time
+                crew_time = time_entry.get().strip()
+                if crew_time and ':' in crew_time:
+                    try:
+                        hours, mins = crew_time.split(':')
+                        if 0 <= int(hours) < 24 and 0 <= int(mins) < 60:
+                            self.db.set_crew_start_time(crew_time)
+                    except:
+                        pass  # Keep existing value if invalid
+
+                self.db.set_google_maps_api_key(gmaps_entry.get().strip())
 
                 messagebox.showinfo("Success", "Settings saved successfully!")
 
