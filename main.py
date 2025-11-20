@@ -920,6 +920,8 @@ class LandscapingApp(ctk.CTk):
 
         self.current_viz_client_id = None
         self.viz_canvas_widget = None
+        self._viz_canvas = None
+        self._viz_figure = None
 
     def refresh_dashboard(self):
         """Refresh the dashboard with updated statistics."""
@@ -1116,21 +1118,22 @@ class LandscapingApp(ctk.CTk):
 
     def update_visualization(self, *args):
         """Update the visualization chart based on current client and mode."""
-        # Close previous matplotlib figure to prevent memory accumulation
-        if hasattr(self, '_viz_figure') and self._viz_figure:
-            plt.close(self._viz_figure)
-            self._viz_figure = None
-
-        # Destroy existing canvas widget if it exists
-        if self.viz_canvas_widget:
-            self.viz_canvas_widget.destroy()
-            self.viz_canvas_widget = None
-
-        # Clear container
-        for widget in self.viz_container.winfo_children():
-            widget.destroy()
+        # Clear existing canvas if it exists, but don't destroy it
+        if hasattr(self, '_viz_canvas') and self._viz_canvas:
+            # Clear the figure
+            if hasattr(self, '_viz_figure') and self._viz_figure:
+                self._viz_figure.clear()
+        else:
+            # First time setup - clear container
+            for widget in self.viz_container.winfo_children():
+                widget.destroy()
 
         if not self.current_viz_client_id:
+            # Clear any existing visualization
+            if hasattr(self, '_viz_canvas') and self._viz_canvas:
+                if hasattr(self, '_viz_figure'):
+                    self._viz_figure.clear()
+                    self._viz_canvas.draw()
             return
 
         # Get visit data for current year
@@ -1181,9 +1184,15 @@ class LandscapingApp(ctk.CTk):
         ylabel = "Avg Time (minutes)" if self.viz_mode_var.get() == "time" else "Avg Cost ($)"
         title = f"Average {ylabel.split()[1]} per Visit by Month"
 
-        # Create figure with fixed size
-        fig = Figure(figsize=(10, 4.5), dpi=100, facecolor='#2b2b2b')
-        self._viz_figure = fig  # Store for cleanup on next update
+        # Create or reuse figure
+        if not hasattr(self, '_viz_figure') or not self._viz_figure:
+            # First time - create figure
+            self._viz_figure = Figure(figsize=(10, 4.5), dpi=100, facecolor='#2b2b2b')
+        else:
+            # Clear existing figure for redraw
+            self._viz_figure.clear()
+
+        fig = self._viz_figure
         ax = fig.add_subplot(111)
         ax.set_facecolor('#2b2b2b')
 
@@ -1217,11 +1226,15 @@ class LandscapingApp(ctk.CTk):
         for spine in ax.spines.values():
             spine.set_edgecolor('#555555')
 
-        # Embed in container - use grid for stable scaling
-        canvas = FigureCanvasTkAgg(fig, master=self.viz_container)
-        canvas.draw()
-        self.viz_canvas_widget = canvas.get_tk_widget()
-        self.viz_canvas_widget.grid(row=0, column=0, sticky="nsew")
+        # Create canvas only once, then reuse it
+        if not hasattr(self, '_viz_canvas') or not self._viz_canvas:
+            # First time - create canvas
+            self._viz_canvas = FigureCanvasTkAgg(fig, master=self.viz_container)
+            self.viz_canvas_widget = self._viz_canvas.get_tk_widget()
+            self.viz_canvas_widget.grid(row=0, column=0, sticky="nsew")
+
+        # Redraw canvas with updated figure
+        self._viz_canvas.draw()
 
     def create_client_card(self, parent, stats, row):
         """Create a visual card showing client statistics."""
