@@ -268,7 +268,7 @@ class LandscapingApp(ctk.CTk):
         self.tabs_loaded['dashboard'] = True
 
     def create_navigation_pane(self):
-        """Create left navigation pane with buttons for each section."""
+        """Create left navigation pane with button-style navigation."""
         nav_frame = ctk.CTkFrame(self.main_container, width=200)
         nav_frame.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
         nav_frame.grid_propagate(False)  # Don't shrink
@@ -297,16 +297,19 @@ class LandscapingApp(ctk.CTk):
         for idx, (name, icon) in enumerate(nav_buttons, start=1):
             btn = ctk.CTkButton(
                 nav_frame,
-                text=f"{icon}  {name}",  # Two spaces for consistent spacing
+                text=f"{icon}  {name}",
                 command=lambda n=name: self.show_frame(n),
                 font=ctk.CTkFont(size=12),
                 height=40,
-                anchor="w",
-                fg_color="transparent",
+                corner_radius=8,
+                border_width=2,
+                border_color=("gray70", "gray30"),
+                fg_color=("gray90", "gray20"),
+                hover_color=("gray80", "gray25"),
                 text_color=("gray10", "gray90"),
-                hover_color=("gray70", "gray30")
+                anchor="w"
             )
-            btn.grid(row=idx, column=0, sticky="ew", padx=8, pady=2)
+            btn.grid(row=idx, column=0, sticky="ew", padx=8, pady=3)
             self.nav_buttons[name] = btn
 
         # Separator before bottom items
@@ -320,12 +323,15 @@ class LandscapingApp(ctk.CTk):
             command=lambda: self.show_frame('Import Historical Data'),
             font=ctk.CTkFont(size=12),
             height=40,
-            anchor="w",
-            fg_color="transparent",
+            corner_radius=8,
+            border_width=2,
+            border_color=("gray70", "gray30"),
+            fg_color=("gray90", "gray20"),
+            hover_color=("gray80", "gray25"),
             text_color=("gray10", "gray90"),
-            hover_color=("gray70", "gray30")
+            anchor="w"
         )
-        import_btn.grid(row=102, column=0, sticky="ew", padx=8, pady=2)
+        import_btn.grid(row=102, column=0, sticky="ew", padx=8, pady=3)
         self.nav_buttons['Import Historical Data'] = import_btn
 
         # Settings button at very bottom
@@ -335,15 +341,18 @@ class LandscapingApp(ctk.CTk):
             command=self.show_settings_dialog,
             font=ctk.CTkFont(size=12),
             height=40,
-            anchor="w",
-            fg_color="transparent",
+            corner_radius=8,
+            border_width=2,
+            border_color=("gray70", "gray30"),
+            fg_color=("gray90", "gray20"),
+            hover_color=("gray80", "gray25"),
             text_color=("gray10", "gray90"),
-            hover_color=("gray70", "gray30")
+            anchor="w"
         )
-        settings_btn.grid(row=103, column=0, sticky="ew", padx=8, pady=(2, 10))
+        settings_btn.grid(row=103, column=0, sticky="ew", padx=8, pady=(3, 10))
 
     def show_frame(self, frame_name):
-        """Show the specified frame and highlight the corresponding nav button."""
+        """Show the specified frame and make the nav button appear pressed."""
         # Hide current frame
         if self.current_frame:
             self.frames[self.current_frame].grid_forget()
@@ -352,12 +361,24 @@ class LandscapingApp(ctk.CTk):
         self.frames[frame_name].grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
         self.current_frame = frame_name
 
-        # Update button colors to highlight active
+        # Update button styles - active button appears "pressed"
         for name, btn in self.nav_buttons.items():
             if name == frame_name:
-                btn.configure(fg_color=("gray75", "gray25"))
+                # Active/pressed button style
+                btn.configure(
+                    fg_color=("gray75", "gray35"),
+                    border_color=("gray60", "gray40"),
+                    border_width=1,
+                    text_color=("gray10", "white")
+                )
             else:
-                btn.configure(fg_color="transparent")
+                # Inactive button style
+                btn.configure(
+                    fg_color=("gray90", "gray20"),
+                    border_color=("gray70", "gray30"),
+                    border_width=2,
+                    text_color=("gray10", "gray90")
+                )
 
         # Handle lazy loading
         self.on_tab_change(frame_name)
