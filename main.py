@@ -1217,8 +1217,6 @@ class LandscapingApp(ctk.CTk):
         for spine in ax.spines.values():
             spine.set_edgecolor('#555555')
 
-        fig.tight_layout(pad=1.5)
-
         # Embed in container - use grid for stable scaling
         canvas = FigureCanvasTkAgg(fig, master=self.viz_container)
         canvas.draw()
