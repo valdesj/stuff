@@ -912,10 +912,9 @@ class LandscapingApp(ctk.CTk):
             font=ctk.CTkFont(size=10)
         ).pack(side="left", padx=3)
 
-        # Canvas container - fixed size, no propagation
-        self.viz_container = ctk.CTkFrame(viz_frame, width=800, height=300)
+        # Canvas container - scales with window
+        self.viz_container = ctk.CTkFrame(viz_frame)
         self.viz_container.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-        self.viz_container.pack_propagate(False)
 
         self.current_viz_client_id = None
         self.viz_canvas_widget = None
@@ -1181,7 +1180,7 @@ class LandscapingApp(ctk.CTk):
         title = f"Average {ylabel.split()[1]} per Visit by Month"
 
         # Create figure with fixed size
-        fig = Figure(figsize=(8, 3), dpi=100, facecolor='#2b2b2b')
+        fig = Figure(figsize=(10, 4.5), dpi=100, facecolor='#2b2b2b')
         self._viz_figure = fig  # Store for cleanup on next update
         ax = fig.add_subplot(111)
         ax.set_facecolor('#2b2b2b')
@@ -1218,12 +1217,11 @@ class LandscapingApp(ctk.CTk):
 
         fig.tight_layout(pad=1.5)
 
-        # Embed in container with explicit size - no scaling
+        # Embed in container - fill available space
         canvas = FigureCanvasTkAgg(fig, master=self.viz_container)
         canvas.draw()
         self.viz_canvas_widget = canvas.get_tk_widget()
-        # Place at explicit position with explicit size to prevent scaling
-        self.viz_canvas_widget.place(x=0, y=0, width=800, height=300)
+        self.viz_canvas_widget.pack(fill="both", expand=True)
 
     def create_client_card(self, parent, stats, row):
         """Create a visual card showing client statistics."""
