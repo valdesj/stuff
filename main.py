@@ -169,6 +169,9 @@ class ModernCalendar(ctk.CTkFrame):
         # Header with month/year and navigation
         header_frame = ctk.CTkFrame(self, fg_color="transparent")
         header_frame.pack(fill="x", pady=(0, 10))
+        header_frame.bind("<MouseWheel>", self.on_mouse_wheel)
+        header_frame.bind("<Button-4>", self.on_mouse_wheel)
+        header_frame.bind("<Button-5>", self.on_mouse_wheel)
 
         # Previous month button
         prev_btn = ctk.CTkButton(
@@ -183,6 +186,9 @@ class ModernCalendar(ctk.CTkFrame):
             font=ctk.CTkFont(size=14)
         )
         prev_btn.pack(side="left", padx=5)
+        prev_btn.bind("<MouseWheel>", self.on_mouse_wheel)
+        prev_btn.bind("<Button-4>", self.on_mouse_wheel)
+        prev_btn.bind("<Button-5>", self.on_mouse_wheel)
 
         # Month and year label
         self.month_year_label = ctk.CTkLabel(
@@ -191,6 +197,9 @@ class ModernCalendar(ctk.CTkFrame):
             font=ctk.CTkFont(size=16, weight="bold")
         )
         self.month_year_label.pack(side="left", expand=True)
+        self.month_year_label.bind("<MouseWheel>", self.on_mouse_wheel)
+        self.month_year_label.bind("<Button-4>", self.on_mouse_wheel)
+        self.month_year_label.bind("<Button-5>", self.on_mouse_wheel)
 
         # Next month button
         next_btn = ctk.CTkButton(
@@ -205,10 +214,16 @@ class ModernCalendar(ctk.CTkFrame):
             font=ctk.CTkFont(size=14)
         )
         next_btn.pack(side="left", padx=5)
+        next_btn.bind("<MouseWheel>", self.on_mouse_wheel)
+        next_btn.bind("<Button-4>", self.on_mouse_wheel)
+        next_btn.bind("<Button-5>", self.on_mouse_wheel)
 
         # Day names header
         days_header = ctk.CTkFrame(self, fg_color="transparent")
         days_header.pack(fill="x", pady=(0, 5))
+        days_header.bind("<MouseWheel>", self.on_mouse_wheel)
+        days_header.bind("<Button-4>", self.on_mouse_wheel)
+        days_header.bind("<Button-5>", self.on_mouse_wheel)
 
         day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         for day_name in day_names:
@@ -220,15 +235,23 @@ class ModernCalendar(ctk.CTkFrame):
                 width=40
             )
             day_label.pack(side="left", padx=2)
+            day_label.bind("<MouseWheel>", self.on_mouse_wheel)
+            day_label.bind("<Button-4>", self.on_mouse_wheel)
+            day_label.bind("<Button-5>", self.on_mouse_wheel)
 
         # Calendar grid frame
         self.calendar_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.calendar_frame.pack(fill="both", expand=True)
 
-        # Bind mouse wheel for scrolling through months
-        self.bind_all("<MouseWheel>", self.on_mouse_wheel)  # Windows/Mac
-        self.bind_all("<Button-4>", self.on_mouse_wheel)    # Linux scroll up
-        self.bind_all("<Button-5>", self.on_mouse_wheel)    # Linux scroll down
+        # Bind mouse wheel for scrolling through months to the calendar widget
+        self.bind("<MouseWheel>", self.on_mouse_wheel)  # Windows/Mac
+        self.bind("<Button-4>", self.on_mouse_wheel)    # Linux scroll up
+        self.bind("<Button-5>", self.on_mouse_wheel)    # Linux scroll down
+
+        # Also bind to calendar frame and header for better coverage
+        self.calendar_frame.bind("<MouseWheel>", self.on_mouse_wheel)
+        self.calendar_frame.bind("<Button-4>", self.on_mouse_wheel)
+        self.calendar_frame.bind("<Button-5>", self.on_mouse_wheel)
 
         self.update_calendar()
 
@@ -288,6 +311,11 @@ class ModernCalendar(ctk.CTkFrame):
                 command=lambda d=date_obj: self.select_date(d)
             )
             day_btn.grid(row=row, column=col, padx=2, pady=2)
+
+            # Bind mouse wheel to each button for scrolling
+            day_btn.bind("<MouseWheel>", self.on_mouse_wheel)
+            day_btn.bind("<Button-4>", self.on_mouse_wheel)
+            day_btn.bind("<Button-5>", self.on_mouse_wheel)
 
             col += 1
             if col > 6:
