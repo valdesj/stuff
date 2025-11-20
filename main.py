@@ -47,12 +47,21 @@ class SplashScreen:
         self.splash = tk.Tk()
         self.splash.overrideredirect(True)  # Remove window decorations
 
-        # Try to make window transparent
+        # Set window background to white (will be made transparent)
+        self.splash.config(bg='white')
+
+        # Try to make white background transparent
         try:
-            self.splash.attributes('-alpha', 1.0)  # Fully opaque, image handles transparency
+            # Make white color transparent - this makes the white background invisible
+            self.splash.wm_attributes('-transparentcolor', 'white')
             self.splash.attributes('-topmost', True)  # Keep on top
         except:
-            pass
+            # If transparentcolor not supported, try alpha
+            try:
+                self.splash.attributes('-alpha', 0.95)
+                self.splash.attributes('-topmost', True)
+            except:
+                pass
 
         # Load and display logo
         try:
@@ -73,11 +82,11 @@ class SplashScreen:
 
                 self.photo = ImageTk.PhotoImage(img)
 
-                # Create label with image
+                # Create label with white background (will be transparent)
                 label = tk.Label(
                     self.splash,
                     image=self.photo,
-                    bg='black',  # Background color for non-transparent areas
+                    bg='white',  # White background will be made transparent
                     bd=0,
                     highlightthickness=0
                 )
@@ -6015,16 +6024,25 @@ if __name__ == "__main__":
     # Show splash screen
     splash = SplashScreen()
 
-    # Function to initialize main app after a brief delay
+    # Function to initialize and show main app
     def start_main_app():
-        # Close splash screen
-        splash.close()
-
-        # Create and run main application
+        # Create main application (this takes time to initialize)
         app = LandscapingApp()
         app.protocol("WM_DELETE_WINDOW", app.on_closing)
+
+        # Wait for main window to be fully mapped/visible
+        app.update_idletasks()
+
+        # Give the window a moment to render
+        def close_splash_and_show_app():
+            splash.close()
+            app.deiconify()  # Ensure app is visible
+
+        app.after(100, close_splash_and_show_app)
+
+        # Start main application loop
         app.mainloop()
 
-    # Give splash screen time to display (1.5 seconds)
-    splash.splash.after(1500, start_main_app)
+    # Start loading the main app after splash is displayed (100ms delay)
+    splash.splash.after(100, start_main_app)
     splash.splash.mainloop()
