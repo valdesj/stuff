@@ -873,13 +873,13 @@ class LandscapingApp(ctk.CTk):
         self.dashboard_client_frame.grid_columnconfigure(0, weight=1)
 
         # Visualization frame
-        viz_frame = ctk.CTkFrame(self.tab_dashboard)
-        viz_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
-        viz_frame.grid_columnconfigure(0, weight=1)
-        viz_frame.grid_rowconfigure(1, weight=1)
+        self.viz_frame = ctk.CTkFrame(self.tab_dashboard)
+        self.viz_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+        self.viz_frame.grid_columnconfigure(0, weight=1)
+        self.viz_frame.grid_rowconfigure(1, weight=1)
 
         # Visualization header with toggle
-        viz_header_frame = ctk.CTkFrame(viz_frame, fg_color="transparent")
+        viz_header_frame = ctk.CTkFrame(self.viz_frame, fg_color="transparent")
         viz_header_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=3)
 
         viz_title = ctk.CTkLabel(
@@ -913,13 +913,22 @@ class LandscapingApp(ctk.CTk):
         )
         cost_radio.pack(side="left", padx=3)
 
-        # Canvas for matplotlib
-        self.viz_canvas_frame = ctk.CTkFrame(viz_frame)
+        # Canvas for matplotlib (will be recreated on each update)
+        self.create_viz_canvas_frame()
+
+        self.current_viz_client_id = None
+
+    def create_viz_canvas_frame(self):
+        """Create or recreate the visualization canvas frame."""
+        # Destroy existing frame if it exists
+        if hasattr(self, 'viz_canvas_frame') and self.viz_canvas_frame:
+            self.viz_canvas_frame.destroy()
+
+        # Create fresh canvas frame
+        self.viz_canvas_frame = ctk.CTkFrame(self.viz_frame)
         self.viz_canvas_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
         self.viz_canvas_frame.grid_columnconfigure(0, weight=1)
         self.viz_canvas_frame.grid_rowconfigure(0, weight=1)
-
-        self.current_viz_client_id = None
 
     def refresh_dashboard(self):
         """Refresh the dashboard with updated statistics."""
@@ -1120,14 +1129,7 @@ class LandscapingApp(ctk.CTk):
 
     def update_visualization(self, *args):
         """Update the visualization chart based on current client and mode."""
-        # Properly cleanup existing matplotlib canvas and figure
-        if hasattr(self, '_current_viz_canvas') and self._current_viz_canvas:
-            try:
-                self._current_viz_canvas.get_tk_widget().destroy()
-            except:
-                pass
-            self._current_viz_canvas = None
-
+        # Cleanup existing matplotlib resources
         if hasattr(self, '_current_viz_figure') and self._current_viz_figure:
             try:
                 plt.close(self._current_viz_figure)
@@ -1135,9 +1137,8 @@ class LandscapingApp(ctk.CTk):
                 pass
             self._current_viz_figure = None
 
-        # Clear any remaining widgets
-        for widget in self.viz_canvas_frame.winfo_children():
-            widget.destroy()
+        # Recreate the canvas frame to ensure clean state
+        self.create_viz_canvas_frame()
 
         if not self.current_viz_client_id:
             return
@@ -1249,7 +1250,8 @@ class LandscapingApp(ctk.CTk):
         # Embed in tkinter
         canvas = FigureCanvasTkAgg(fig, master=self.viz_canvas_frame)
         canvas.draw()
-        canvas.get_tk_widget().pack(fill="both", expand=True)
+        canvas_widget = canvas.get_tk_widget()
+        canvas_widget.grid(row=0, column=0, sticky="nsew")
 
         # Store references for cleanup
         self._current_viz_canvas = canvas
