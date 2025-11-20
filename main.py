@@ -111,16 +111,24 @@ class SplashScreen:
                 title_label = tk.Label(
                     outer_frame,
                     text="Landscaping Client Tracker",
-                    font=("Arial", 16, "bold"),
+                    font=("Arial", 20, "bold"),
                     bg='#2a2a2a',
-                    fg='#ffffff'
+                    fg='#ffffff',
+                    wraplength=700
                 )
-                title_label.pack(pady=(0, 20))
+                title_label.pack(pady=(10, 30))
 
-                # Center window on screen
+                # Center window on screen - let tkinter calculate the actual size needed
                 self.splash.update_idletasks()
-                width = img.width + 100
-                height = img.height + 140
+
+                # Get the actual required size from tkinter
+                req_width = self.splash.winfo_reqwidth()
+                req_height = self.splash.winfo_reqheight()
+
+                # Add extra padding to ensure nothing is cut off
+                width = max(req_width + 50, 700)
+                height = max(req_height + 50, 500)
+
                 x = (self.splash.winfo_screenwidth() // 2) - (width // 2)
                 y = (self.splash.winfo_screenheight() // 2) - (height // 2)
                 self.splash.geometry(f'{width}x{height}+{x}+{y}')
@@ -149,18 +157,26 @@ class SplashScreen:
         label = tk.Label(
             outer_frame,
             text="Landscaping Client Tracker",
-            font=("Arial", 28, "bold"),
+            font=("Arial", 32, "bold"),
             bg='#2a2a2a',
             fg='white',
-            padx=60,
-            pady=60
+            padx=80,
+            pady=80,
+            wraplength=700
         )
         label.pack()
 
         # Center window
         self.splash.update_idletasks()
-        width = 600
-        height = 300
+
+        # Get actual size needed
+        req_width = self.splash.winfo_reqwidth()
+        req_height = self.splash.winfo_reqheight()
+
+        # Ensure minimum size
+        width = max(req_width + 50, 700)
+        height = max(req_height + 50, 400)
+
         x = (self.splash.winfo_screenwidth() // 2) - (width // 2)
         y = (self.splash.winfo_screenheight() // 2) - (height // 2)
         self.splash.geometry(f'{width}x{height}+{x}+{y}')
@@ -6408,8 +6424,8 @@ if __name__ == "__main__":
         # Close splash screen
         splash.close()
 
-    # Display splash for 2.5 seconds before showing main app
-    app.after(2500, show_main_app)
+    # Display splash for 4 seconds before showing main app
+    app.after(4000, show_main_app)
 
     # Start the main application loop
     app.mainloop()
