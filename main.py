@@ -485,6 +485,7 @@ class LandscapingApp(ctk.CTk):
         self.tab_daily = ctk.CTkFrame(self.content_area)
         self.tab_todo = ctk.CTkFrame(self.content_area)
         self.tab_materials = ctk.CTkFrame(self.content_area)
+        self.tab_route_planner = ctk.CTkFrame(self.content_area)
         self.tab_import = ctk.CTkFrame(self.content_area)
 
         self.frames = {
@@ -494,6 +495,7 @@ class LandscapingApp(ctk.CTk):
             'Daily Schedule': self.tab_daily,
             'To-Do': self.tab_todo,
             'Materials': self.tab_materials,
+            'Route Planner': self.tab_route_planner,
             'Import Historical Data': self.tab_import
         }
 
@@ -504,6 +506,7 @@ class LandscapingApp(ctk.CTk):
         self.init_daily_schedule_tab()
         self.init_todo_tab()
         self.init_materials_tab()
+        self.init_route_planner_tab()
         self.init_import_tab()
 
         # Current selections
@@ -547,6 +550,7 @@ class LandscapingApp(ctk.CTk):
             ("Clients", "👥"),
             ("Visits", "📅"),
             ("Daily Schedule", "🗓️"),
+            ("Route Planner", "🗺️"),
             ("To-Do", "✓"),
             ("Materials", "🛠️"),
         ]
@@ -5567,6 +5571,181 @@ The upload page works on any device with a camera!""")
 
     # ==================== IMPORT TAB ====================
 
+    def init_route_planner_tab(self):
+        """Initialize the Route Planner tab for optimizing visit routes."""
+        self.tab_route_planner.grid_columnconfigure(0, weight=1)
+        self.tab_route_planner.grid_rowconfigure(1, weight=1)
+
+        # Header
+        header = ctk.CTkLabel(
+            self.tab_route_planner,
+            text="Route Planner - Optimize Daily Routes",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        header.grid(row=0, column=0, sticky="w", padx=15, pady=12)
+
+        # Main content frame
+        content_frame = ctk.CTkFrame(self.tab_route_planner)
+        content_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        content_frame.grid_columnconfigure(0, weight=1)
+        content_frame.grid_rowconfigure(2, weight=1)
+
+        # Controls frame
+        controls_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+        controls_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+
+        # Date selector
+        date_label = ctk.CTkLabel(
+            controls_frame,
+            text="Select Date:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        date_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+
+        # Date entry
+        self.route_date_var = tk.StringVar(value=datetime.now().strftime('%Y-%m-%d'))
+        date_entry = ctk.CTkEntry(
+            controls_frame,
+            textvariable=self.route_date_var,
+            placeholder_text="YYYY-MM-DD",
+            width=150
+        )
+        date_entry.grid(row=0, column=1, padx=5, pady=5)
+
+        # Day selector buttons
+        day_btn_frame = ctk.CTkFrame(controls_frame, fg_color="transparent")
+        day_btn_frame.grid(row=0, column=2, padx=10, pady=5)
+
+        def set_date_offset(days):
+            new_date = datetime.now() + timedelta(days=days)
+            self.route_date_var.set(new_date.strftime('%Y-%m-%d'))
+
+        ctk.CTkButton(
+            day_btn_frame,
+            text="Today",
+            command=lambda: set_date_offset(0),
+            width=70,
+            height=28
+        ).pack(side="left", padx=2)
+
+        ctk.CTkButton(
+            day_btn_frame,
+            text="Tomorrow",
+            command=lambda: set_date_offset(1),
+            width=80,
+            height=28
+        ).pack(side="left", padx=2)
+
+        # Optimize button
+        optimize_btn = ctk.CTkButton(
+            controls_frame,
+            text="🗺️  Optimize Route",
+            command=self.optimize_route,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            height=35,
+            width=150
+        )
+        optimize_btn.grid(row=0, column=3, padx=15, pady=5)
+
+        # Info/Status frame
+        info_frame = ctk.CTkFrame(content_frame)
+        info_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
+
+        self.route_info_label = ctk.CTkLabel(
+            info_frame,
+            text="Select a date and click 'Optimize Route' to calculate the best route",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        self.route_info_label.pack(pady=10, padx=10)
+
+        # Results frame (scrollable)
+        results_frame = ctk.CTkScrollableFrame(content_frame, label_text="Optimized Route")
+        results_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+
+        self.route_results_frame = results_frame
+
+    def optimize_route(self):
+        """Optimize the route for the selected date."""
+        # Clear previous results
+        for widget in self.route_results_frame.winfo_children():
+            widget.destroy()
+
+        try:
+            # Get selected date
+            selected_date = self.route_date_var.get()
+
+            # Validate settings
+            start_location = self.db.get_start_location()
+            api_key = self.db.get_google_maps_api_key()
+            crew_start_time = self.db.get_crew_start_time()
+
+            if not start_location:
+                self.route_info_label.configure(
+                    text="❌ Please configure crew start location in Settings (Import Data tab)",
+                    text_color="red"
+                )
+                return
+
+            if not api_key:
+                self.route_info_label.configure(
+                    text="❌ Please configure Google Maps API key in Settings (Import Data tab)",
+                    text_color="red"
+                )
+                return
+
+            # Update status
+            self.route_info_label.configure(
+                text=f"⏳ Calculating optimal route for {selected_date}...",
+                text_color="orange"
+            )
+            self.update()
+
+            # Get visits for the selected date
+            visits = self.db.get_visits_for_date(selected_date)
+
+            if not visits:
+                self.route_info_label.configure(
+                    text=f"No visits with addresses found for {selected_date}",
+                    text_color="gray"
+                )
+                return
+
+            # Calculate optimized route
+            optimized_route = self.calculate_optimized_route(visits, start_location, api_key)
+
+            if optimized_route:
+                self.display_route_results(optimized_route, selected_date, crew_start_time)
+                self.route_info_label.configure(
+                    text=f"✅ Route optimized successfully! {len(visits)} stops planned.",
+                    text_color="green"
+                )
+            else:
+                self.route_info_label.configure(
+                    text="❌ Could not optimize route. Check API key and addresses.",
+                    text_color="red"
+                )
+
+        except Exception as e:
+            self.route_info_label.configure(
+                text=f"❌ Error: {str(e)}",
+                text_color="red"
+            )
+            messagebox.showerror("Route Optimization Error", f"An error occurred:\n\n{str(e)}")
+
+    def calculate_optimized_route(self, visits, start_location, api_key):
+        """
+        Calculate the optimized route using Google Maps API and TSP algorithm.
+        Returns optimized route data structure.
+        """
+        # Placeholder - will be implemented in Phase 3 & 4
+        return None
+
+    def display_route_results(self, route, date_str, start_time):
+        """Display the optimized route results in the UI."""
+        # Placeholder - will be implemented in Phase 5
+        pass
+
     def init_import_tab(self):
         """Initialize the data import tab."""
         self.tab_import.grid_columnconfigure(0, weight=1)
@@ -6354,24 +6533,13 @@ Note: Requires Gemini API key (configure in Settings)
         start_entry.pack(pady=3, padx=10, fill="x")
         start_entry.insert(0, self.db.get_start_location())
 
-        # End Location
-        end_frame = ctk.CTkFrame(scroll_frame)
-        end_frame.pack(pady=8, padx=10, fill="x")
-
-        end_label = ctk.CTkLabel(
-            end_frame,
-            text="Crew End Location (Usually same as start):",
-            font=ctk.CTkFont(size=12, weight="bold")
+        start_help = ctk.CTkLabel(
+            start_frame,
+            text="Crew returns to this location at end of day",
+            font=ctk.CTkFont(size=9),
+            text_color="gray"
         )
-        end_label.pack(pady=(8, 3), padx=10, anchor="w")
-
-        end_entry = ctk.CTkEntry(
-            end_frame,
-            placeholder_text="e.g., 123 Main St, City, State ZIP",
-            height=30
-        )
-        end_entry.pack(pady=3, padx=10, fill="x")
-        end_entry.insert(0, self.db.get_end_location())
+        start_help.pack(pady=(0, 8), padx=10)
 
         # Crew Start Time
         time_frame = ctk.CTkFrame(scroll_frame)
@@ -6455,8 +6623,9 @@ Note: Requires Gemini API key (configure in Settings)
                 self.db.set_setting('working_year', new_year)
 
                 # Save route optimization settings
-                self.db.set_start_location(start_entry.get().strip())
-                self.db.set_end_location(end_entry.get().strip())
+                start_loc = start_entry.get().strip()
+                self.db.set_start_location(start_loc)
+                self.db.set_end_location(start_loc)  # End location is always same as start
 
                 # Validate and save crew start time
                 crew_time = time_entry.get().strip()
