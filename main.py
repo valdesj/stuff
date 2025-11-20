@@ -915,6 +915,8 @@ class LandscapingApp(ctk.CTk):
         # Canvas container - scales with window
         self.viz_container = ctk.CTkFrame(viz_frame)
         self.viz_container.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.viz_container.grid_columnconfigure(0, weight=1)
+        self.viz_container.grid_rowconfigure(0, weight=1)
 
         self.current_viz_client_id = None
         self.viz_canvas_widget = None
@@ -1217,11 +1219,11 @@ class LandscapingApp(ctk.CTk):
 
         fig.tight_layout(pad=1.5)
 
-        # Embed in container - fill available space
+        # Embed in container - use grid for stable scaling
         canvas = FigureCanvasTkAgg(fig, master=self.viz_container)
         canvas.draw()
         self.viz_canvas_widget = canvas.get_tk_widget()
-        self.viz_canvas_widget.pack(fill="both", expand=True)
+        self.viz_canvas_widget.grid(row=0, column=0, sticky="nsew")
 
     def create_client_card(self, parent, stats, row):
         """Create a visual card showing client statistics."""
