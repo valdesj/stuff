@@ -4064,104 +4064,83 @@ The upload page works on any device with a camera!""")
     # ==================== DAILY SCHEDULE TAB ====================
 
     def init_daily_schedule_tab(self):
-        """Initialize the daily schedule tab with date selector."""
+        """Initialize the weekly schedule tab with modern date navigation."""
         self.tab_daily.grid_columnconfigure(0, weight=1)
         self.tab_daily.grid_rowconfigure(2, weight=1)
 
         # Header
         header = ctk.CTkLabel(
             self.tab_daily,
-            text="Daily Schedule & Travel Times",
+            text="Weekly Schedule & Travel Times",
             font=ctk.CTkFont(size=16, weight="bold")
         )
         header.grid(row=0, column=0, sticky="w", padx=15, pady=12)
 
-        # Date selection frame
-        date_frame = ctk.CTkFrame(self.tab_daily)
+        # Date navigation frame - modern design
+        date_frame = ctk.CTkFrame(self.tab_daily, fg_color="transparent")
         date_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 10))
+        date_frame.grid_columnconfigure(1, weight=1)
 
-        date_label = ctk.CTkLabel(
-            date_frame,
-            text="Select Date:",
-            font=ctk.CTkFont(size=14)
-        )
-        date_label.pack(side=tk.LEFT, padx=10, pady=15)
-
-        # Calendar picker styled like Windows taskbar calendar
-        self.daily_date_picker = DateEntry(
-            date_frame,
-            width=24,
-            background='#0078D4',  # Windows blue
-            foreground='white',
-            borderwidth=0,
-            font=('Segoe UI', 15),
-            date_pattern='mm/dd/yyyy',
-            # Calendar popup styling - Windows style
-            headersbackground='#1F1F1F',  # Dark header like Windows
-            headersforeground='white',
-            selectbackground='#0078D4',  # Windows blue for selected
-            selectforeground='white',
-            normalbackground='#2D2D2D',  # Clean dark background
-            normalforeground='white',
-            weekendbackground='#2D2D2D',  # Same as weekdays for clean look
-            weekendforeground='white',
-            othermonthforeground='#686868',  # Subtle gray for other months
-            othermonthweforeground='#686868',
-            othermonthwebackground='#2D2D2D',
-            disabledbackground='#2D2D2D',
-            disabledforeground='#404040',
-            bordercolor='#3F3F3F',  # Subtle border
-            cursor='hand2'
-        )
-        self.daily_date_picker.pack(side=tk.LEFT, padx=10, pady=15)
-
-        # Style the calendar popup to match Windows - larger and cleaner
-        self.daily_date_picker._calendar.configure(
-            font=('Segoe UI', 16),  # Larger font like Windows
-            borderwidth=1
-        )
-
-        # Adjust calendar popup window styling
-        try:
-            # Make the popup window larger with more padding
-            self.daily_date_picker._top_cal.configure(bg='#2D2D2D')
-        except:
-            pass  # Window might not exist yet
-
-        # Show button
-        show_btn = ctk.CTkButton(
-            date_frame,
-            text="Show Schedule",
-            command=self.load_daily_schedule,
-            font=ctk.CTkFont(size=14),
-            height=35
-        )
-        show_btn.pack(side=tk.LEFT, padx=10, pady=15)
-
-        # Navigation buttons
+        # Previous week button
         prev_btn = ctk.CTkButton(
             date_frame,
-            text="◀ Previous",
-            command=self.go_to_previous_day,
+            text="◀ Prev Week",
+            command=self.go_to_previous_week,
             font=ctk.CTkFont(size=12),
-            height=30,
-            width=100,
-            fg_color="transparent",
-            border_width=1
+            height=36,
+            width=120,
+            corner_radius=8,
+            border_width=2,
+            fg_color=("gray90", "gray20"),
+            border_color=("gray70", "gray30"),
+            hover_color=("gray80", "gray25")
         )
-        prev_btn.pack(side=tk.LEFT, padx=5, pady=15)
+        prev_btn.grid(row=0, column=0, padx=5)
 
+        # Current week display (acts as button to pick a date)
+        self.current_week_date = datetime.now().date()
+        self.week_display_btn = ctk.CTkButton(
+            date_frame,
+            text="",
+            command=self.show_date_picker_dialog,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=36,
+            corner_radius=8,
+            fg_color=("gray85", "gray25"),
+            hover_color=("gray75", "gray30")
+        )
+        self.week_display_btn.grid(row=0, column=1, padx=10, sticky="ew")
+        self.update_week_display()
+
+        # Next week button
         next_btn = ctk.CTkButton(
             date_frame,
-            text="Next ▶",
-            command=self.go_to_next_day,
+            text="Next Week ▶",
+            command=self.go_to_next_week,
             font=ctk.CTkFont(size=12),
-            height=30,
-            width=100,
-            fg_color="transparent",
-            border_width=1
+            height=36,
+            width=120,
+            corner_radius=8,
+            border_width=2,
+            fg_color=("gray90", "gray20"),
+            border_color=("gray70", "gray30"),
+            hover_color=("gray80", "gray25")
         )
-        next_btn.pack(side=tk.LEFT, padx=5, pady=15)
+        next_btn.grid(row=0, column=2, padx=5)
+
+        # Today button
+        today_btn = ctk.CTkButton(
+            date_frame,
+            text="📅 Today",
+            command=self.go_to_current_week,
+            font=ctk.CTkFont(size=12),
+            height=36,
+            width=100,
+            corner_radius=8,
+            fg_color=("gray88", "gray22"),
+            hover_color=("gray78", "gray27")
+        )
+        today_btn.grid(row=0, column=3, padx=5)
 
         # Schedule display frame
         self.daily_schedule_frame = ctk.CTkScrollableFrame(self.tab_daily)
@@ -4169,156 +4148,225 @@ The upload page works on any device with a camera!""")
         self.daily_schedule_frame.grid_columnconfigure(0, weight=1)
 
         # Initial load
-        self.load_daily_schedule()
+        self.load_weekly_schedule()
 
-    def go_to_previous_day(self):
-        """Navigate to the previous day."""
-        current_date = self.daily_date_picker.get_date()
-        previous_date = current_date - timedelta(days=1)
-        self.daily_date_picker.set_date(previous_date)
-        self.load_daily_schedule()
+    def show_date_picker_dialog(self):
+        """Show a simple date picker dialog."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Select Date")
+        dialog.geometry("320x200")
+        dialog.transient(self)
+        dialog.grab_set()
 
-    def go_to_next_day(self):
-        """Navigate to the next day."""
-        current_date = self.daily_date_picker.get_date()
-        next_date = current_date + timedelta(days=1)
-        self.daily_date_picker.set_date(next_date)
-        self.load_daily_schedule()
+        # Center the dialog
+        dialog.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() // 2) - (320 // 2)
+        y = self.winfo_y() + (self.winfo_height() // 2) - (200 // 2)
+        dialog.geometry(f"+{x}+{y}")
 
-    def load_daily_schedule(self):
-        """Load and display the schedule for the selected date."""
+        label = ctk.CTkLabel(
+            dialog,
+            text="Select a date to view its week:",
+            font=ctk.CTkFont(size=13)
+        )
+        label.pack(pady=20)
+
+        # Date entry with tkcalendar (minimal styling)
+        date_picker = DateEntry(
+            dialog,
+            width=16,
+            background='darkblue',
+            foreground='white',
+            borderwidth=2,
+            date_pattern='mm/dd/yyyy'
+        )
+        date_picker.pack(pady=10)
+        date_picker.set_date(self.current_week_date)
+
+        def on_select():
+            self.current_week_date = date_picker.get_date()
+            self.update_week_display()
+            self.load_weekly_schedule()
+            dialog.destroy()
+
+        select_btn = ctk.CTkButton(
+            dialog,
+            text="Go to Week",
+            command=on_select,
+            height=32,
+            width=150
+        )
+        select_btn.pack(pady=15)
+
+    def update_week_display(self):
+        """Update the week display button text."""
+        # Get Monday of the week containing current_week_date
+        monday = self.current_week_date - timedelta(days=self.current_week_date.weekday())
+        sunday = monday + timedelta(days=6)
+
+        week_str = f"Week of {monday.strftime('%b %d')} - {sunday.strftime('%b %d, %Y')}"
+        self.week_display_btn.configure(text=week_str)
+
+    def go_to_previous_week(self):
+        """Navigate to the previous week."""
+        self.current_week_date -= timedelta(days=7)
+        self.update_week_display()
+        self.load_weekly_schedule()
+
+    def go_to_next_week(self):
+        """Navigate to the next week."""
+        self.current_week_date += timedelta(days=7)
+        self.update_week_display()
+        self.load_weekly_schedule()
+
+    def go_to_current_week(self):
+        """Navigate to the current week."""
+        self.current_week_date = datetime.now().date()
+        self.update_week_display()
+        self.load_weekly_schedule()
+
+    def load_weekly_schedule(self):
+        """Load and display the schedule for the entire week."""
         # Clear existing widgets
         for widget in self.daily_schedule_frame.winfo_children():
             widget.destroy()
 
-        # Get date from calendar picker
-        date_obj = self.daily_date_picker.get_date()
-        db_date = date_obj.strftime('%Y-%m-%d')
-        date_str = date_obj.strftime('%m/%d/%Y')
+        # Get Monday of the current week
+        monday = self.current_week_date - timedelta(days=self.current_week_date.weekday())
 
-        # Get all visits for this date in a single optimized query
-        all_visits = self.db.get_visits_by_date(db_date, active_only=True)
+        # Get all visits for the entire week
+        week_visits = {}
+        week_work_minutes = 0
+        week_travel_minutes = 0
 
-        if not all_visits:
-            no_visits = ctk.CTkLabel(
-                self.daily_schedule_frame,
-                text=f"No visits scheduled for {date_str}",
-                font=ctk.CTkFont(size=14),
-                text_color="gray"
-            )
-            no_visits.pack(pady=50)
-            return
+        for day_offset in range(7):
+            day = monday + timedelta(days=day_offset)
+            db_date = day.strftime('%Y-%m-%d')
+            visits = self.db.get_visits_by_date(db_date, active_only=True)
+            if visits:
+                visits.sort(key=lambda x: x['start_time'])
+            week_visits[day] = visits
 
-        # Sort visits by start time
-        all_visits.sort(key=lambda x: x['start_time'])
+            # Calculate daily totals
+            if visits:
+                week_work_minutes += sum(v['duration_minutes'] for v in visits)
+                for i in range(len(visits) - 1):
+                    end_time = datetime.strptime(visits[i]['end_time'], '%H:%M')
+                    next_start = datetime.strptime(visits[i + 1]['start_time'], '%H:%M')
+                    gap_minutes = (next_start - end_time).total_seconds() / 60
+                    if gap_minutes > 0:
+                        week_travel_minutes += gap_minutes
 
-        # Display header with summary
-        summary_frame = ctk.CTkFrame(self.daily_schedule_frame, fg_color="transparent")
+        # Weekly summary at top
+        summary_frame = ctk.CTkFrame(self.daily_schedule_frame, fg_color=("gray85", "gray25"), corner_radius=8)
         summary_frame.pack(fill="x", padx=10, pady=(5, 15))
 
-        formatted_date = date_obj.strftime("%A, %B %d, %Y")
-        date_header = ctk.CTkLabel(
+        summary_title = ctk.CTkLabel(
             summary_frame,
-            text=formatted_date,
-            font=ctk.CTkFont(size=15, weight="bold")
+            text="📊 Week Summary",
+            font=ctk.CTkFont(size=14, weight="bold")
         )
-        date_header.pack(anchor="w", pady=(0, 5))
+        summary_title.pack(padx=15, pady=(10, 5), anchor="w")
 
-        # Calculate total work time and travel time
-        total_work_minutes = sum(v['duration_minutes'] for v in all_visits)
-        total_travel_minutes = 0
+        total_visits = sum(len(v) for v in week_visits.values())
+        work_hours = week_work_minutes / 60
+        travel_hours = week_travel_minutes / 60
 
-        for i in range(len(all_visits) - 1):
-            end_time = datetime.strptime(all_visits[i]['end_time'], '%H:%M')
-            next_start = datetime.strptime(all_visits[i + 1]['start_time'], '%H:%M')
-            gap_minutes = (next_start - end_time).total_seconds() / 60
-            if gap_minutes > 0:
-                total_travel_minutes += gap_minutes
-
-        summary_text = f"{len(all_visits)} visits • {total_work_minutes:.0f} min work time • {total_travel_minutes:.0f} min travel time"
-        summary_label = ctk.CTkLabel(
+        stats_text = f"Total Visits: {total_visits}  •  Work Time: {work_hours:.1f} hours  •  Travel Time: {travel_hours:.1f} hours"
+        stats_label = ctk.CTkLabel(
             summary_frame,
-            text=summary_text,
+            text=stats_text,
             font=ctk.CTkFont(size=12),
-            text_color="gray"
+            text_color=("gray20", "gray80")
         )
-        summary_label.pack(anchor="w")
+        stats_label.pack(padx=15, pady=(0, 10), anchor="w")
 
-        # Display each visit with travel time
-        for i, visit in enumerate(all_visits):
-            # Visit card
-            visit_card = ctk.CTkFrame(self.daily_schedule_frame, border_width=1)
-            visit_card.pack(fill="x", padx=10, pady=5)
-            visit_card.grid_columnconfigure(1, weight=1)
+        # Days of week grid
+        days_frame = ctk.CTkFrame(self.daily_schedule_frame, fg_color="transparent")
+        days_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
-            # Time indicator
-            start_time = self.format_time_12hr(visit['start_time'])
-            end_time = self.format_time_12hr(visit['end_time'])
-            time_label = ctk.CTkLabel(
-                visit_card,
-                text=f"{start_time}\n{end_time}",
-                font=ctk.CTkFont(size=11),
-                width=80,
-                text_color="gray"
+        # Configure grid columns for 7 days
+        for i in range(7):
+            days_frame.grid_columnconfigure(i, weight=1, uniform="day")
+
+        day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+        for day_offset, day_name in enumerate(day_names):
+            day = monday + timedelta(days=day_offset)
+            visits = week_visits[day]
+
+            # Day column
+            day_col = ctk.CTkFrame(days_frame, corner_radius=8, border_width=1, border_color=("gray70", "gray30"))
+            day_col.grid(row=0, column=day_offset, sticky="nsew", padx=3, pady=3)
+
+            # Day header
+            is_today = day == datetime.now().date()
+            header_color = ("gray75", "gray35") if is_today else ("gray85", "gray25")
+
+            day_header = ctk.CTkFrame(day_col, fg_color=header_color, corner_radius=6)
+            day_header.pack(fill="x", padx=5, pady=5)
+
+            day_label = ctk.CTkLabel(
+                day_header,
+                text=f"{day_name[:3]}\n{day.strftime('%m/%d')}",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                justify="center"
             )
-            time_label.grid(row=0, column=0, padx=10, pady=10, sticky="n")
+            day_label.pack(pady=5)
 
-            # Client and duration info
-            info_frame = ctk.CTkFrame(visit_card, fg_color="transparent")
-            info_frame.grid(row=0, column=1, sticky="ew", padx=10, pady=10)
-
-            client_label = ctk.CTkLabel(
-                info_frame,
-                text=visit['client_name'],
-                font=ctk.CTkFont(size=14, weight="bold")
-            )
-            client_label.pack(anchor="w")
-
-            duration_label = ctk.CTkLabel(
-                info_frame,
-                text=f"Duration: {visit['duration_minutes']:.0f} minutes",
-                font=ctk.CTkFont(size=11),
-                text_color="gray"
-            )
-            duration_label.pack(anchor="w")
-
-            if visit.get('notes'):
-                notes_label = ctk.CTkLabel(
-                    info_frame,
-                    text=f"Notes: {visit['notes']}",
+            # Visits for this day
+            if not visits:
+                no_visits = ctk.CTkLabel(
+                    day_col,
+                    text="No visits",
                     font=ctk.CTkFont(size=10),
-                    text_color="gray",
-                    wraplength=400
+                    text_color="gray"
                 )
-                notes_label.pack(anchor="w", pady=(3, 0))
+                no_visits.pack(pady=20)
+            else:
+                # Day stats
+                day_work = sum(v['duration_minutes'] for v in visits)
+                day_travel = 0
+                for i in range(len(visits) - 1):
+                    end_time = datetime.strptime(visits[i]['end_time'], '%H:%M')
+                    next_start = datetime.strptime(visits[i + 1]['start_time'], '%H:%M')
+                    gap = (next_start - end_time).total_seconds() / 60
+                    if gap > 0:
+                        day_travel += gap
 
-            # Show travel time to next visit
-            if i < len(all_visits) - 1:
-                # Calculate gap
-                end_time_obj = datetime.strptime(visit['end_time'], '%H:%M')
-                next_start_obj = datetime.strptime(all_visits[i + 1]['start_time'], '%H:%M')
-                gap_minutes = (next_start_obj - end_time_obj).total_seconds() / 60
+                stats = ctk.CTkLabel(
+                    day_col,
+                    text=f"⏱️ {day_work:.0f}m work\n🚗 {day_travel:.0f}m travel",
+                    font=ctk.CTkFont(size=9),
+                    text_color="gray",
+                    justify="center"
+                )
+                stats.pack(pady=3)
 
-                if gap_minutes > 0:
-                    # Travel time indicator
-                    travel_frame = ctk.CTkFrame(self.daily_schedule_frame, fg_color="transparent")
-                    travel_frame.pack(fill="x", padx=10, pady=2)
+                # Each visit
+                for visit in visits:
+                    visit_frame = ctk.CTkFrame(day_col, fg_color=("gray90", "gray20"), corner_radius=4)
+                    visit_frame.pack(fill="x", padx=5, pady=3)
 
-                    travel_icon = ctk.CTkLabel(
-                        travel_frame,
-                        text="🚗",
-                        font=ctk.CTkFont(size=14),
-                        width=80
+                    time_str = f"{self.format_time_12hr(visit['start_time'])}"
+                    time_label = ctk.CTkLabel(
+                        visit_frame,
+                        text=time_str,
+                        font=ctk.CTkFont(size=9, weight="bold"),
+                        text_color=("gray30", "gray70")
                     )
-                    travel_icon.pack(side=tk.LEFT, padx=10)
+                    time_label.pack(pady=(3, 0))
 
-                    travel_label = ctk.CTkLabel(
-                        travel_frame,
-                        text=f"Travel time: {gap_minutes:.0f} minutes → {all_visits[i + 1]['client_name']}",
-                        font=ctk.CTkFont(size=11, weight="bold"),
-                        text_color="#7B9EB5"
+                    client_label = ctk.CTkLabel(
+                        visit_frame,
+                        text=visit['client_name'],
+                        font=ctk.CTkFont(size=10, weight="bold")
                     )
-                    travel_label.pack(side=tk.LEFT, padx=5)
+                    client_label.pack(pady=(0, 3))
+
+    def load_daily_schedule(self):
+        """Legacy method - redirects to weekly schedule."""
+        self.load_weekly_schedule()
 
     # ==================== TO-DO TAB ====================
 
