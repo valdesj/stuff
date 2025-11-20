@@ -924,11 +924,12 @@ class LandscapingApp(ctk.CTk):
         if hasattr(self, 'viz_canvas_frame') and self.viz_canvas_frame:
             self.viz_canvas_frame.destroy()
 
-        # Create fresh canvas frame
-        self.viz_canvas_frame = ctk.CTkFrame(self.viz_frame)
+        # Create fresh canvas frame with fixed height to prevent growth
+        self.viz_canvas_frame = ctk.CTkFrame(self.viz_frame, height=350)
         self.viz_canvas_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
         self.viz_canvas_frame.grid_columnconfigure(0, weight=1)
         self.viz_canvas_frame.grid_rowconfigure(0, weight=1)
+        self.viz_canvas_frame.grid_propagate(False)  # Prevent frame from resizing to fit contents
 
     def refresh_dashboard(self):
         """Refresh the dashboard with updated statistics."""
