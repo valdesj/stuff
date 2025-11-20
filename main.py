@@ -214,7 +214,7 @@ class LandscapingApp(ctk.CTk):
         self.content_area = ctk.CTkFrame(self.main_container)
         self.content_area.grid(row=0, column=1, sticky="nsew", padx=(5, 0), pady=0)
         self.content_area.grid_columnconfigure(0, weight=1)
-        self.content_area.grid_rowconfigure(0, weight=1)
+        self.content_area.grid_rowconfigure(1, weight=1)  # Row 1 contains the content frames
 
         # Create header in content area
         self.create_header()
