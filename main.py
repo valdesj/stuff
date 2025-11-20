@@ -4295,8 +4295,14 @@ The upload page works on any device with a camera!""")
             day = monday + timedelta(days=day_offset)
             visits = week_visits[day]
 
-            # Day column
-            day_col = ctk.CTkFrame(days_frame, corner_radius=8, border_width=1, border_color=("gray70", "gray30"))
+            # Day column - scrollable for many visits
+            day_col = ctk.CTkScrollableFrame(
+                days_frame,
+                corner_radius=8,
+                border_width=1,
+                border_color=("gray70", "gray30"),
+                fg_color=("gray95", "gray15")
+            )
             day_col.grid(row=0, column=day_offset, sticky="nsew", padx=3, pady=3)
 
             # Day header
