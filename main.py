@@ -5733,18 +5733,297 @@ The upload page works on any device with a camera!""")
             )
             messagebox.showerror("Route Optimization Error", f"An error occurred:\n\n{str(e)}")
 
+    def get_distance_matrix(self, origins, destinations, api_key):
+        """
+        Get driving times and distances between locations using Google Maps Distance Matrix API.
+        Returns a dict with distance and duration information.
+        """
+        import requests
+
+        base_url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+
+        try:
+            # Prepare addresses
+            origins_str = "|".join(origins)
+            destinations_str = "|".join(destinations)
+
+            params = {
+                'origins': origins_str,
+                'destinations': destinations_str,
+                'key': api_key,
+                'mode': 'driving',
+                'units': 'imperial'
+            }
+
+            response = requests.get(base_url, params=params, timeout=10)
+            data = response.json()
+
+            if data['status'] != 'OK':
+                raise Exception(f"Google Maps API error: {data.get('error_message', data['status'])}")
+
+            # Parse response into a matrix
+            matrix = {
+                'durations': [],  # in seconds
+                'distances': []   # in meters
+            }
+
+            for row in data['rows']:
+                duration_row = []
+                distance_row = []
+
+                for element in row['elements']:
+                    if element['status'] == 'OK':
+                        duration_row.append(element['duration']['value'])  # seconds
+                        distance_row.append(element['distance']['value'])  # meters
+                    else:
+                        # If route not found, use a large penalty value
+                        duration_row.append(999999)
+                        distance_row.append(999999)
+
+                matrix['durations'].append(duration_row)
+                matrix['distances'].append(distance_row)
+
+            return matrix
+
+        except requests.exceptions.Timeout:
+            raise Exception("Google Maps API request timed out")
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Network error: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Distance calculation error: {str(e)}")
+
+    def solve_tsp(self, distance_matrix, n):
+        """
+        Solve the Traveling Salesman Problem using nearest neighbor with 2-opt improvement.
+        Returns the optimal order of indices to visit.
+        """
+        # Start and end at depot (index 0)
+        unvisited = set(range(1, n))
+        route = [0]
+        current = 0
+
+        # Nearest neighbor construction
+        while unvisited:
+            nearest = min(unvisited, key=lambda x: distance_matrix[current][x])
+            route.append(nearest)
+            current = nearest
+            unvisited.remove(nearest)
+
+        # Return to depot
+        route.append(0)
+
+        # 2-opt improvement
+        improved = True
+        while improved:
+            improved = False
+            for i in range(1, len(route) - 2):
+                for j in range(i + 1, len(route) - 1):
+                    # Try reversing the segment between i and j
+                    if self.calculate_route_length(route, distance_matrix) > \
+                       self.calculate_route_length(route[:i] + route[i:j+1][::-1] + route[j+1:], distance_matrix):
+                        route = route[:i] + route[i:j+1][::-1] + route[j+1:]
+                        improved = True
+
+        return route
+
+    def calculate_route_length(self, route, distance_matrix):
+        """Calculate total length of a route."""
+        total = 0
+        for i in range(len(route) - 1):
+            total += distance_matrix[route[i]][route[i+1]]
+        return total
+
     def calculate_optimized_route(self, visits, start_location, api_key):
         """
         Calculate the optimized route using Google Maps API and TSP algorithm.
-        Returns optimized route data structure.
+        Returns optimized route data structure with stop order, times, and distances.
         """
-        # Placeholder - will be implemented in Phase 3 & 4
-        return None
+        try:
+            # Build list of all locations (depot + visit locations)
+            locations = [start_location]
+            location_names = ["Depot (Start/End)"]
+            visit_data = [None]  # No visit data for depot
+
+            for visit in visits:
+                locations.append(visit['address'])
+                location_names.append(visit['client_name'])
+                visit_data.append(visit)
+
+            # Get distance/duration matrix from Google Maps
+            matrix = self.get_distance_matrix(locations, locations, api_key)
+
+            if not matrix:
+                return None
+
+            # Run TSP optimization
+            optimal_order = self.solve_tsp(matrix['durations'], len(locations))
+
+            # Build route result
+            route = {
+                'stops': [],
+                'total_drive_time': 0,
+                'total_work_time': 0,
+                'total_distance': 0
+            }
+
+            for i in range(len(optimal_order) - 1):
+                current_idx = optimal_order[i]
+                next_idx = optimal_order[i + 1]
+
+                drive_time = matrix['durations'][current_idx][next_idx]  # seconds
+                distance = matrix['distances'][current_idx][next_idx]  # meters
+
+                stop = {
+                    'location': locations[current_idx],
+                    'name': location_names[current_idx],
+                    'visit': visit_data[current_idx],
+                    'drive_to_next': drive_time,
+                    'distance_to_next': distance
+                }
+
+                if visit_data[current_idx]:  # Not the depot
+                    # Get estimated work time from historical data
+                    work_time = self.db.get_client_average_duration(visit_data[current_idx]['client_id'])
+                    stop['work_time'] = work_time * 60  # convert minutes to seconds
+                    route['total_work_time'] += stop['work_time']
+                else:
+                    stop['work_time'] = 0
+
+                route['stops'].append(stop)
+                route['total_drive_time'] += drive_time
+                route['total_distance'] += distance
+
+            # Add final stop (return to depot)
+            final_idx = optimal_order[-1]
+            final_stop = {
+                'location': locations[final_idx],
+                'name': location_names[final_idx],
+                'visit': visit_data[final_idx],
+                'drive_to_next': 0,
+                'distance_to_next': 0
+            }
+
+            if visit_data[final_idx]:
+                work_time = self.db.get_client_average_duration(visit_data[final_idx]['client_id'])
+                final_stop['work_time'] = work_time * 60
+                route['total_work_time'] += final_stop['work_time']
+            else:
+                final_stop['work_time'] = 0
+
+            route['stops'].append(final_stop)
+
+            return route
+
+        except Exception as e:
+            print(f"Route calculation error: {e}")
+            raise
 
     def display_route_results(self, route, date_str, start_time):
-        """Display the optimized route results in the UI."""
-        # Placeholder - will be implemented in Phase 5
-        pass
+        """Display the optimized route results in the UI with timeline."""
+        # Parse start time
+        start_hour, start_min = map(int, start_time.split(':'))
+        current_time = datetime.strptime(f"{start_hour}:{start_min}", "%H:%M")
+
+        # Summary card
+        summary_frame = ctk.CTkFrame(self.route_results_frame, border_width=2, border_color=("gray70", "gray30"))
+        summary_frame.pack(fill="x", padx=5, pady=10)
+
+        summary_title = ctk.CTkLabel(
+            summary_frame,
+            text="📊 Route Summary",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        summary_title.pack(pady=(10, 5), padx=10)
+
+        # Calculations
+        total_stops = len([s for s in route['stops'] if s['visit']])  # Exclude depot
+        total_drive_hours = route['total_drive_time'] / 3600
+        total_work_hours = route['total_work_time'] / 3600
+        total_hours = total_drive_hours + total_work_hours
+        total_miles = route['total_distance'] * 0.000621371  # meters to miles
+
+        summary_text = f"""
+Stops: {total_stops} clients
+Total Drive Time: {int(total_drive_hours)}h {int((total_drive_hours % 1) * 60)}m
+Total Work Time: {int(total_work_hours)}h {int((total_work_hours % 1) * 60)}m
+Total Day Length: {int(total_hours)}h {int((total_hours % 1) * 60)}m
+Total Distance: {total_miles:.1f} miles
+        """
+
+        summary_label = ctk.CTkLabel(
+            summary_frame,
+            text=summary_text.strip(),
+            font=ctk.CTkFont(size=11),
+            justify="left"
+        )
+        summary_label.pack(pady=5, padx=15)
+
+        # Timeline
+        timeline_label = ctk.CTkLabel(
+            self.route_results_frame,
+            text="🕐 Optimized Timeline",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        timeline_label.pack(pady=(15, 5), padx=5, anchor="w")
+
+        # Display each stop
+        for idx, stop in enumerate(route['stops']):
+            stop_frame = ctk.CTkFrame(self.route_results_frame)
+            stop_frame.pack(fill="x", padx=5, pady=3)
+
+            # Time and stop number
+            time_str = current_time.strftime("%I:%M %p")
+
+            if stop['visit']:  # Not depot
+                header_text = f"{idx}. {time_str} - {stop['name']}"
+                header_color = ("blue", "lightblue")
+            else:
+                header_text = f"{time_str} - 🏠 {stop['name']}"
+                header_color = ("green", "lightgreen")
+
+            header = ctk.CTkLabel(
+                stop_frame,
+                text=header_text,
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=header_color
+            )
+            header.pack(anchor="w", padx=10, pady=(5, 2))
+
+            # Details
+            if stop['visit']:
+                work_mins = int(stop['work_time'] / 60)
+                details = f"   Work time: {work_mins} min"
+                ctk.CTkLabel(
+                    stop_frame,
+                    text=details,
+                    font=ctk.CTkFont(size=10),
+                    text_color="gray"
+                ).pack(anchor="w", padx=10)
+
+                current_time += timedelta(seconds=stop['work_time'])
+
+            # Drive to next
+            if stop['drive_to_next'] > 0:
+                drive_mins = int(stop['drive_to_next'] / 60)
+                drive_miles = stop['distance_to_next'] * 0.000621371
+                drive_text = f"   🚗 Drive to next: {drive_mins} min ({drive_miles:.1f} mi)"
+                ctk.CTkLabel(
+                    stop_frame,
+                    text=drive_text,
+                    font=ctk.CTkFont(size=10),
+                    text_color=("gray50", "gray60")
+                ).pack(anchor="w", padx=10, pady=(0, 5))
+
+                current_time += timedelta(seconds=stop['drive_to_next'])
+
+        # End time
+        end_time_label = ctk.CTkLabel(
+            self.route_results_frame,
+            text=f"⏰ Estimated End Time: {current_time.strftime('%I:%M %p')}",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=("red", "orange")
+        )
+        end_time_label.pack(pady=15, padx=5)
 
     def init_import_tab(self):
         """Initialize the data import tab."""
