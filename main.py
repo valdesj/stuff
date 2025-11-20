@@ -40,6 +40,96 @@ except:
     pass
 
 
+class SplashScreen:
+    """Transparent splash screen showing just the logo image."""
+
+    def __init__(self):
+        self.splash = tk.Tk()
+        self.splash.overrideredirect(True)  # Remove window decorations
+
+        # Try to make window transparent
+        try:
+            self.splash.attributes('-alpha', 1.0)  # Fully opaque, image handles transparency
+            self.splash.attributes('-topmost', True)  # Keep on top
+        except:
+            pass
+
+        # Load and display logo
+        try:
+            import os
+            from PIL import Image, ImageTk
+
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            png_path = os.path.join(script_dir, 'mJorgesLogo.png')
+
+            if os.path.exists(png_path):
+                # Load image with transparency
+                img = Image.open(png_path)
+
+                # Resize if too large (max 400x400)
+                max_size = 400
+                if img.width > max_size or img.height > max_size:
+                    img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+
+                self.photo = ImageTk.PhotoImage(img)
+
+                # Create label with image
+                label = tk.Label(
+                    self.splash,
+                    image=self.photo,
+                    bg='black',  # Background color for non-transparent areas
+                    bd=0,
+                    highlightthickness=0
+                )
+                label.pack()
+
+                # Center window on screen
+                self.splash.update_idletasks()
+                width = img.width
+                height = img.height
+                x = (self.splash.winfo_screenwidth() // 2) - (width // 2)
+                y = (self.splash.winfo_screenheight() // 2) - (height // 2)
+                self.splash.geometry(f'{width}x{height}+{x}+{y}')
+
+                self.splash.update()
+            else:
+                # If no logo, just show a simple splash
+                self.show_simple_splash()
+
+        except Exception as e:
+            print(f"Could not load splash image: {e}")
+            self.show_simple_splash()
+
+    def show_simple_splash(self):
+        """Show a simple text splash if image not available."""
+        label = tk.Label(
+            self.splash,
+            text="Landscaping Client Tracker",
+            font=("Arial", 24, "bold"),
+            bg='#1a1a1a',
+            fg='white',
+            padx=40,
+            pady=40
+        )
+        label.pack()
+
+        # Center window
+        self.splash.update_idletasks()
+        width = 400
+        height = 200
+        x = (self.splash.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.splash.winfo_screenheight() // 2) - (height // 2)
+        self.splash.geometry(f'{width}x{height}+{x}+{y}')
+        self.splash.update()
+
+    def close(self):
+        """Close the splash screen."""
+        try:
+            self.splash.destroy()
+        except:
+            pass
+
+
 class LandscapingApp(ctk.CTk):
     """Main application window for the Landscaping Client Tracker."""
 
@@ -5922,6 +6012,19 @@ Note: Requires Gemini API key (configure in Settings)
 
 
 if __name__ == "__main__":
-    app = LandscapingApp()
-    app.protocol("WM_DELETE_WINDOW", app.on_closing)
-    app.mainloop()
+    # Show splash screen
+    splash = SplashScreen()
+
+    # Function to initialize main app after a brief delay
+    def start_main_app():
+        # Close splash screen
+        splash.close()
+
+        # Create and run main application
+        app = LandscapingApp()
+        app.protocol("WM_DELETE_WINDOW", app.on_closing)
+        app.mainloop()
+
+    # Give splash screen time to display (1.5 seconds)
+    splash.splash.after(1500, start_main_app)
+    splash.splash.mainloop()
