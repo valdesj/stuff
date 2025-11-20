@@ -1120,14 +1120,24 @@ class LandscapingApp(ctk.CTk):
 
     def update_visualization(self, *args):
         """Update the visualization chart based on current client and mode."""
-        # Clear existing visualization
+        # Properly cleanup existing matplotlib canvas and figure
+        if hasattr(self, '_current_viz_canvas') and self._current_viz_canvas:
+            try:
+                self._current_viz_canvas.get_tk_widget().destroy()
+            except:
+                pass
+            self._current_viz_canvas = None
+
+        if hasattr(self, '_current_viz_figure') and self._current_viz_figure:
+            try:
+                plt.close(self._current_viz_figure)
+            except:
+                pass
+            self._current_viz_figure = None
+
+        # Clear any remaining widgets
         for widget in self.viz_canvas_frame.winfo_children():
             widget.destroy()
-
-        # Close any existing matplotlib figure to prevent accumulation
-        if hasattr(self, '_current_viz_figure') and self._current_viz_figure:
-            plt.close(self._current_viz_figure)
-            self._current_viz_figure = None
 
         if not self.current_viz_client_id:
             return
@@ -1240,6 +1250,9 @@ class LandscapingApp(ctk.CTk):
         canvas = FigureCanvasTkAgg(fig, master=self.viz_canvas_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill="both", expand=True)
+
+        # Store references for cleanup
+        self._current_viz_canvas = canvas
 
         # Update spine colors for dark theme
         for spine in ax.spines.values():
